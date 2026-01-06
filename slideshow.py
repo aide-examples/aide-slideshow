@@ -1,0 +1,1411 @@
+"""
+Raspberry Pi Photo Slideshow
+
+A modular slideshow application with plugin architecture for:
+- Monitor power control (CEC, Shelly, GPIO relay, Samsung TV API)
+- Motion detection (GPIO PIR, MQTT, Alexa)
+- Remote control input (IR remote, HTTP API)
+
+Each concern has an abstract interface that can be implemented by different
+backends depending on your hardware setup.
+"""
+
+import os
+import sys
+import json
+import pygame
+import time
+import random
+import signal
+import threading
+import selectors
+from abc import ABC, abstractmethod
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+import subprocess
+
+# Force immediate log output for systemd
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
+# --- DRIVER FIXES BEFORE PYGAME INIT ---
+os.environ["SDL_VIDEODRIVER"] = "kmsdrm"
+os.environ["SDL_NOMOUSE"] = "1"
+# If HDMI-0 doesn't work, change to card1 later
+os.environ["SDL_DRM_DEVICE"] = "/dev/dri/card0"
+
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+DEFAULT_CONFIG = {
+    "image_dir": "/home/pi/img",
+    "display_duration": 35,
+    "fade_steps": 5,
+    "api_port": 8080,
+
+    # Monitor power control - choose ONE provider
+    "monitor_control": {
+        "provider": "cec",  # Options: "cec", "shelly", "gpio_relay", "samsung_ws", "none"
+        "cec": {
+            "device_id": "0"
+        },
+        "shelly": {
+            "ip": None
+        },
+        "gpio_relay": {
+            "pin": 27,
+            "active_low": False
+        },
+        "samsung_ws": {
+            "ip": None,
+            "port": 8002,
+            "mac_address": None,
+            "token_file": "/home/pi/.samsung_token",
+            "name": "RaspberryPiSlideshow",
+            "timeout": 5
+        }
+    },
+
+    # Motion sensor - choose ONE provider
+    "motion_sensor": {
+        "provider": "none",  # Options: "gpio_pir", "mqtt", "none"
+        "idle_timeout": 300,  # Seconds without motion before turning off monitor
+        "gpio_pir": {
+            "pin": 17
+        },
+        "mqtt": {
+            "broker": None,
+            "topic": "home/motion/livingroom"
+        }
+    },
+
+    # Remote control input - can enable MULTIPLE
+    "remote_control": {
+        "http_api": {
+            "enabled": True,
+            "port": 8080
+        },
+        "ir_remote": {
+            "enabled": False,
+            "device": "/dev/input/event0",
+            "key_map": {
+                "KEY_PLAYPAUSE": "toggle_pause",
+                "KEY_PLAY": "resume",
+                "KEY_PAUSE": "pause",
+                "KEY_NEXT": "skip",
+                "KEY_PREVIOUS": "skip",
+                "KEY_UP": "speed_down",
+                "KEY_DOWN": "speed_up",
+                "KEY_POWER": "toggle_monitor",
+                "KEY_1": "filter_1",
+                "KEY_2": "filter_2",
+                "KEY_3": "filter_3",
+                "KEY_0": "filter_clear"
+            },
+            "folder_shortcuts": {
+                "filter_1": None,
+                "filter_2": None,
+                "filter_3": None
+            }
+        }
+    }
+}
+
+
+def load_config(config_path="/home/pi/slideshow/config.json"):
+    """Load configuration from JSON file, merging with defaults"""
+    config = json.loads(json.dumps(DEFAULT_CONFIG))  # Deep copy
+
+    def deep_merge(base, override):
+        """Recursively merge override into base"""
+        for key, value in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                deep_merge(base[key], value)
+            else:
+                base[key] = value
+        return base
+
+    try:
+        with open(config_path, 'r') as f:
+            user_config = json.load(f)
+            deep_merge(config, user_config)
+    except FileNotFoundError:
+        print(f"Config not found at {config_path}, using defaults")
+    except json.JSONDecodeError as e:
+        print(f"Config parse error: {e}, using defaults")
+
+    return config
+
+
+# =============================================================================
+# MONITOR CONTROL - Abstract Interface and Implementations
+# =============================================================================
+
+class MonitorControlProvider(ABC):
+    """
+    Abstract interface for monitor power control.
+
+    Problem: We need to turn the display on/off to save power when no one is watching.
+
+    Solutions:
+    - CEC: HDMI-CEC protocol, works with most TVs, no extra hardware
+    - Shelly: Smart plug, cuts power completely, works with any display
+    - GPIO Relay: Direct relay control, cheapest hardware solution
+    - Samsung WebSocket: Samsung Smart TV API, most features but Samsung-only
+    """
+
+    @abstractmethod
+    def turn_on(self) -> bool:
+        """Turn monitor on. Returns True on success."""
+        pass
+
+    @abstractmethod
+    def turn_off(self) -> bool:
+        """Turn monitor off. Returns True on success."""
+        pass
+
+    @property
+    @abstractmethod
+    def is_on(self) -> bool:
+        """Current monitor state (may be assumed, not always queryable)."""
+        pass
+
+
+class NullMonitorControl(MonitorControlProvider):
+    """No-op implementation when monitor control is disabled."""
+
+    def __init__(self):
+        self._is_on = True
+
+    def turn_on(self) -> bool:
+        self._is_on = True
+        return True
+
+    def turn_off(self) -> bool:
+        self._is_on = False
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+
+class CECMonitorControl(MonitorControlProvider):
+    """
+    HDMI-CEC based monitor control.
+
+    Requirements:
+    - cec-utils package: sudo apt install cec-utils
+    - TV with CEC support (Samsung calls it "Anynet+")
+    - HDMI cable that supports CEC (most do)
+
+    Limitations:
+    - Some TVs have buggy CEC implementations
+    - May not work reliably with all HDMI switches
+    """
+
+    def __init__(self, config):
+        self.device_id = config.get("device_id", "0")
+        self._is_on = True
+
+    def turn_on(self) -> bool:
+        try:
+            subprocess.run(
+                ["cec-client", "-s", "-d", "1"],
+                input=f"on {self.device_id}".encode(),
+                timeout=5,
+                capture_output=True
+            )
+            self._is_on = True
+            print("CEC: Monitor turned ON")
+            return True
+        except Exception as e:
+            print(f"CEC error: {e}")
+            return False
+
+    def turn_off(self) -> bool:
+        try:
+            subprocess.run(
+                ["cec-client", "-s", "-d", "1"],
+                input=f"standby {self.device_id}".encode(),
+                timeout=5,
+                capture_output=True
+            )
+            self._is_on = False
+            print("CEC: Monitor turned OFF")
+            return True
+        except Exception as e:
+            print(f"CEC error: {e}")
+            return False
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+
+class ShellyMonitorControl(MonitorControlProvider):
+    """
+    Shelly smart plug based monitor control.
+
+    Requirements:
+    - Shelly Plug or Shelly 1 relay
+    - Shelly device on same network
+
+    Advantages:
+    - Works with any display (cuts power completely)
+    - Can measure power consumption
+    - Works even if TV CEC is broken
+
+    Limitations:
+    - Requires additional hardware (~€15-25)
+    - Hard power cut may not be ideal for all displays
+    """
+
+    def __init__(self, config):
+        self.ip = config.get("ip")
+        self._is_on = True
+
+        if not self.ip:
+            print("WARNING: Shelly IP not configured")
+
+    def _request(self, action):
+        """Send request to Shelly device"""
+        import urllib.request
+        try:
+            url = f"http://{self.ip}/relay/0?turn={action}"
+            urllib.request.urlopen(url, timeout=5)
+            return True
+        except Exception as e:
+            print(f"Shelly error: {e}")
+            return False
+
+    def turn_on(self) -> bool:
+        if not self.ip:
+            return False
+        if self._request("on"):
+            self._is_on = True
+            print("Shelly: Monitor turned ON")
+            return True
+        return False
+
+    def turn_off(self) -> bool:
+        if not self.ip:
+            return False
+        if self._request("off"):
+            self._is_on = False
+            print("Shelly: Monitor turned OFF")
+            return True
+        return False
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+
+class GPIORelayMonitorControl(MonitorControlProvider):
+    """
+    GPIO relay based monitor control.
+
+    Requirements:
+    - Relay module connected to GPIO pin
+    - RPi.GPIO or gpiozero library
+
+    Advantages:
+    - Cheapest solution (~€2 for relay module)
+    - No network dependency
+    - Works with any display
+
+    Limitations:
+    - Requires wiring
+    - Hard power cut
+    """
+
+    def __init__(self, config):
+        self.pin = config.get("pin", 27)
+        self.active_low = config.get("active_low", False)
+        self._is_on = True
+        self._gpio_available = False
+
+        try:
+            import RPi.GPIO as GPIO
+            self.GPIO = GPIO
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(self.pin, GPIO.OUT)
+            GPIO.output(self.pin, GPIO.LOW if self.active_low else GPIO.HIGH)
+            self._gpio_available = True
+            print(f"GPIO Relay initialized on pin {self.pin}")
+        except ImportError:
+            print("WARNING: RPi.GPIO not available, GPIO relay disabled")
+        except Exception as e:
+            print(f"GPIO setup error: {e}")
+
+    def turn_on(self) -> bool:
+        if not self._gpio_available:
+            return False
+        try:
+            self.GPIO.output(self.pin, self.GPIO.LOW if self.active_low else self.GPIO.HIGH)
+            self._is_on = True
+            print("GPIO Relay: Monitor turned ON")
+            return True
+        except Exception as e:
+            print(f"GPIO error: {e}")
+            return False
+
+    def turn_off(self) -> bool:
+        if not self._gpio_available:
+            return False
+        try:
+            self.GPIO.output(self.pin, self.GPIO.HIGH if self.active_low else self.GPIO.LOW)
+            self._is_on = False
+            print("GPIO Relay: Monitor turned OFF")
+            return True
+        except Exception as e:
+            print(f"GPIO error: {e}")
+            return False
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+
+class SamsungWSMonitorControl(MonitorControlProvider):
+    """
+    Samsung Smart TV WebSocket API control.
+
+    Requirements:
+    - Samsung Smart TV (2016 or newer, including The Frame)
+    - samsungtvws library: pip install samsungtvws
+    - TV and Pi on same network
+    - First connection requires approval on TV screen
+
+    Advantages:
+    - Native TV control, most reliable for Samsung
+    - Can send any remote key command
+    - Proper standby (not hard power cut)
+    - Wake-on-LAN support for turning on from standby
+    - For The Frame: Can also control Art Mode
+
+    Limitations:
+    - Samsung TVs only
+    - Requires pairing on first use (approve on TV)
+    - TV must have network standby enabled for wake-on-LAN
+
+    Setup for Samsung The Frame:
+    1. Enable network standby: Settings → General → Network → Expert Settings → Power On with Mobile
+    2. First run will prompt for approval on TV screen
+    3. Token is saved to token_file for future connections
+    """
+
+    def __init__(self, config):
+        self.ip = config.get("ip")
+        self.token_file = config.get("token_file", "/home/pi/.samsung_token")
+        self.mac_address = config.get("mac_address")  # For Wake-on-LAN
+        self.port = config.get("port", 8002)  # 8001 for older TVs, 8002 for newer (SSL)
+        self.timeout = config.get("timeout", 5)
+        self.name = config.get("name", "RaspberryPiSlideshow")
+        self._is_on = True
+        self._tv = None
+        self._tv_class = None
+
+        if not self.ip:
+            print("WARNING: Samsung TV IP not configured")
+            return
+
+        # Import the library
+        try:
+            from samsungtvws import SamsungTVWS
+            self._tv_class = SamsungTVWS
+            print(f"Samsung WS: Library loaded, TV at {self.ip}:{self.port}")
+
+            # Test connection and get initial state
+            if self._check_tv_available():
+                print("Samsung WS: TV is responding")
+                self._is_on = True
+            else:
+                print("Samsung WS: TV not responding (may be in standby)")
+                self._is_on = False
+
+        except ImportError:
+            print("WARNING: samsungtvws not installed. Run: pip install samsungtvws")
+        except Exception as e:
+            print(f"Samsung WS init error: {e}")
+
+    def _get_connection(self):
+        """Create a new TV connection (connections should be short-lived)."""
+        if not self._tv_class:
+            return None
+        try:
+            return self._tv_class(
+                host=self.ip,
+                port=self.port,
+                token_file=self.token_file,
+                timeout=self.timeout,
+                name=self.name
+            )
+        except Exception as e:
+            print(f"Samsung WS connection error: {e}")
+            return None
+
+    def _check_tv_available(self) -> bool:
+        """Check if TV is reachable via REST API (works even without WebSocket)."""
+        import urllib.request
+        import urllib.error
+        try:
+            # Samsung TVs expose device info via REST
+            url = f"http://{self.ip}:8001/api/v2/"
+            req = urllib.request.Request(url, method='GET')
+            with urllib.request.urlopen(req, timeout=2) as response:
+                return response.status == 200
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return False
+
+    def _send_key(self, key: str) -> bool:
+        """Send a key command to the TV."""
+        tv = self._get_connection()
+        if not tv:
+            return False
+        try:
+            tv.send_key(key)
+            return True
+        except Exception as e:
+            print(f"Samsung WS send_key error: {e}")
+            return False
+
+    def _wake_on_lan(self) -> bool:
+        """Wake TV via Wake-on-LAN if MAC address is configured."""
+        if not self.mac_address:
+            print("Samsung WS: MAC address not configured for Wake-on-LAN")
+            return False
+
+        try:
+            # Build magic packet
+            mac_bytes = bytes.fromhex(self.mac_address.replace(':', '').replace('-', ''))
+            magic_packet = b'\xff' * 6 + mac_bytes * 16
+
+            # Send via UDP broadcast
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            sock.sendto(magic_packet, ('255.255.255.255', 9))
+            sock.close()
+
+            print("Samsung WS: Wake-on-LAN packet sent")
+            return True
+        except Exception as e:
+            print(f"Samsung WS Wake-on-LAN error: {e}")
+            return False
+
+    def turn_on(self) -> bool:
+        """Turn TV on."""
+        if self._is_on and self._check_tv_available():
+            print("Samsung WS: TV already on")
+            return True
+
+        # Try Wake-on-LAN first (works when TV is in standby)
+        if self.mac_address:
+            self._wake_on_lan()
+            # Wait a moment for TV to wake
+            time.sleep(3)
+
+        # Check if TV is now available
+        if self._check_tv_available():
+            self._is_on = True
+            print("Samsung WS: Monitor turned ON")
+            return True
+
+        # If WoL didn't work or no MAC, try sending KEY_POWER
+        # (only works if TV is in network standby mode)
+        if self._send_key("KEY_POWER"):
+            self._is_on = True
+            print("Samsung WS: Monitor turned ON via KEY_POWER")
+            return True
+
+        print("Samsung WS: Failed to turn on TV")
+        return False
+
+    def turn_off(self) -> bool:
+        """Turn TV off (standby)."""
+        if not self._is_on and not self._check_tv_available():
+            print("Samsung WS: TV already off")
+            return True
+
+        # Send power key to put TV in standby
+        if self._send_key("KEY_POWER"):
+            self._is_on = False
+            print("Samsung WS: Monitor turned OFF")
+            return True
+
+        # Alternative: try KEY_POWEROFF specifically
+        if self._send_key("KEY_POWEROFF"):
+            self._is_on = False
+            print("Samsung WS: Monitor turned OFF via KEY_POWEROFF")
+            return True
+
+        print("Samsung WS: Failed to turn off TV")
+        return False
+
+    def send_key(self, key: str) -> bool:
+        """
+        Send any remote key to the TV.
+
+        Common keys:
+        - KEY_POWER, KEY_POWEROFF, KEY_POWERON
+        - KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER
+        - KEY_RETURN, KEY_HOME, KEY_MENU
+        - KEY_VOLUP, KEY_VOLDOWN, KEY_MUTE
+        - KEY_CHUP, KEY_CHDOWN
+        - KEY_SOURCE, KEY_HDMI (cycle inputs)
+        - KEY_0 through KEY_9
+        - KEY_PLAY, KEY_PAUSE, KEY_STOP, KEY_FF, KEY_REWIND
+        """
+        return self._send_key(key)
+
+    @property
+    def is_on(self) -> bool:
+        # Optionally refresh state
+        # self._is_on = self._check_tv_available()
+        return self._is_on
+
+    def get_device_info(self) -> dict:
+        """Get TV device information via REST API."""
+        import urllib.request
+        import json
+        try:
+            url = f"http://{self.ip}:8001/api/v2/"
+            with urllib.request.urlopen(url, timeout=5) as response:
+                return json.loads(response.read().decode())
+        except Exception as e:
+            print(f"Samsung WS device info error: {e}")
+            return {}
+
+
+def create_monitor_control(config) -> MonitorControlProvider:
+    """Factory function to create the configured monitor control provider."""
+    provider = config.get("provider", "none")
+
+    if provider == "cec":
+        return CECMonitorControl(config.get("cec", {}))
+    elif provider == "shelly":
+        return ShellyMonitorControl(config.get("shelly", {}))
+    elif provider == "gpio_relay":
+        return GPIORelayMonitorControl(config.get("gpio_relay", {}))
+    elif provider == "samsung_ws":
+        return SamsungWSMonitorControl(config.get("samsung_ws", {}))
+    else:
+        return NullMonitorControl()
+
+
+# =============================================================================
+# MOTION SENSOR - Abstract Interface and Implementations
+# =============================================================================
+
+class MotionSensorProvider(ABC):
+    """
+    Abstract interface for motion detection.
+
+    Problem: We want to turn off the display when no one is watching to save power.
+
+    Solutions:
+    - GPIO PIR: Simple passive infrared sensor, cheap and reliable
+    - MQTT: Subscribe to motion events from external sensors (Zigbee, Alexa, etc.)
+    - (Future) Alexa: Use Alexa motion sensor via Smart Home API
+    """
+
+    def __init__(self, on_motion_callback, on_idle_callback):
+        """
+        Initialize with callbacks.
+
+        Args:
+            on_motion_callback: Called when motion is detected
+            on_idle_callback: Called after idle timeout with no motion
+        """
+        self.on_motion = on_motion_callback
+        self.on_idle = on_idle_callback
+
+    @abstractmethod
+    def start(self):
+        """Start monitoring for motion."""
+        pass
+
+    @abstractmethod
+    def stop(self):
+        """Stop monitoring."""
+        pass
+
+
+class NullMotionSensor(MotionSensorProvider):
+    """No-op implementation when motion sensing is disabled."""
+
+    def start(self):
+        print("Motion sensor: disabled")
+
+    def stop(self):
+        pass
+
+
+class GPIOPIRMotionSensor(MotionSensorProvider):
+    """
+    GPIO PIR (Passive Infrared) motion sensor.
+
+    Requirements:
+    - PIR sensor module (HC-SR501 or similar, ~€2)
+    - Connected to GPIO pin
+
+    Wiring:
+    - VCC -> 5V (Pin 2)
+    - GND -> GND (Pin 6)
+    - OUT -> GPIO pin (e.g., Pin 11 = GPIO 17)
+
+    Advantages:
+    - Very cheap and simple
+    - No network/cloud dependency
+    - Low latency
+
+    Limitations:
+    - Requires line of sight
+    - Can be triggered by pets
+    """
+
+    def __init__(self, config, on_motion_callback, on_idle_callback):
+        super().__init__(on_motion_callback, on_idle_callback)
+        self.pin = config.get("pin", 17)
+        self.idle_timeout = config.get("idle_timeout", 300)
+        self._running = False
+        self._thread = None
+        self._last_motion = time.time()
+        self._gpio_available = False
+        self._was_idle = False
+
+    def start(self):
+        try:
+            import RPi.GPIO as GPIO
+            self.GPIO = GPIO
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(self.pin, GPIO.IN)
+            self._gpio_available = True
+            self._running = True
+            self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+            self._thread.start()
+            print(f"PIR motion sensor started on GPIO {self.pin}")
+        except ImportError:
+            print("WARNING: RPi.GPIO not available, PIR sensor disabled")
+        except Exception as e:
+            print(f"PIR setup error: {e}")
+
+    def stop(self):
+        self._running = False
+
+    def _monitor_loop(self):
+        while self._running:
+            try:
+                if self.GPIO.input(self.pin):
+                    self._last_motion = time.time()
+                    if self._was_idle:
+                        self._was_idle = False
+                        print("PIR: Motion detected")
+                        self.on_motion()
+                else:
+                    idle_time = time.time() - self._last_motion
+                    if idle_time > self.idle_timeout and not self._was_idle:
+                        self._was_idle = True
+                        print(f"PIR: No motion for {self.idle_timeout}s")
+                        self.on_idle()
+            except Exception as e:
+                print(f"PIR error: {e}")
+
+            time.sleep(0.5)
+
+
+class MQTTMotionSensor(MotionSensorProvider):
+    """
+    MQTT-based motion sensor.
+
+    Requirements:
+    - MQTT broker (e.g., Mosquitto)
+    - paho-mqtt library: pip install paho-mqtt
+    - Motion sensor publishing to MQTT (Zigbee2MQTT, Alexa via bridge, etc.)
+
+    Advantages:
+    - Works with any sensor that can publish to MQTT
+    - Can aggregate multiple sensors
+    - Works with Zigbee sensors via Zigbee2MQTT
+
+    Limitations:
+    - Requires MQTT broker setup
+    - Additional latency
+
+    Note: This is a placeholder - full implementation requires paho-mqtt.
+    """
+
+    def __init__(self, config, on_motion_callback, on_idle_callback):
+        super().__init__(on_motion_callback, on_idle_callback)
+        self.broker = config.get("broker")
+        self.topic = config.get("topic", "home/motion/#")
+        self.idle_timeout = config.get("idle_timeout", 300)
+        self._client = None
+
+    def start(self):
+        if not self.broker:
+            print("WARNING: MQTT broker not configured")
+            return
+
+        try:
+            import paho.mqtt.client as mqtt
+
+            self._client = mqtt.Client()
+            self._client.on_message = self._on_message
+            self._client.connect(self.broker)
+            self._client.subscribe(self.topic)
+            self._client.loop_start()
+            print(f"MQTT motion sensor subscribed to {self.topic}")
+        except ImportError:
+            print("WARNING: paho-mqtt not installed. Run: pip install paho-mqtt")
+        except Exception as e:
+            print(f"MQTT error: {e}")
+
+    def stop(self):
+        if self._client:
+            self._client.loop_stop()
+            self._client.disconnect()
+
+    def _on_message(self, client, userdata, message):
+        try:
+            payload = message.payload.decode()
+            # Handle common motion sensor payload formats
+            if payload in ("ON", "on", "1", "true", "motion"):
+                print(f"MQTT: Motion detected on {message.topic}")
+                self.on_motion()
+        except Exception as e:
+            print(f"MQTT message error: {e}")
+
+
+def create_motion_sensor(config, on_motion, on_idle) -> MotionSensorProvider:
+    """Factory function to create the configured motion sensor provider."""
+    provider = config.get("provider", "none")
+    idle_timeout = config.get("idle_timeout", 300)
+
+    if provider == "gpio_pir":
+        sensor_config = config.get("gpio_pir", {})
+        sensor_config["idle_timeout"] = idle_timeout
+        return GPIOPIRMotionSensor(sensor_config, on_motion, on_idle)
+    elif provider == "mqtt":
+        sensor_config = config.get("mqtt", {})
+        sensor_config["idle_timeout"] = idle_timeout
+        return MQTTMotionSensor(sensor_config, on_motion, on_idle)
+    else:
+        return NullMotionSensor(on_motion, on_idle)
+
+
+# =============================================================================
+# REMOTE CONTROL INPUT - Abstract Interface and Implementations
+# =============================================================================
+
+class RemoteControlProvider(ABC):
+    """
+    Abstract interface for remote control input.
+
+    Problem: We need ways to control the slideshow (pause, skip, speed, filters).
+
+    Solutions:
+    - HTTP API: Universal, works from any device with a browser
+    - IR Remote: Physical remote, works without network
+    - (Future) Alexa: Voice control via Smart Home skill
+    """
+
+    def __init__(self, slideshow):
+        self.slideshow = slideshow
+
+    @abstractmethod
+    def start(self):
+        """Start listening for control input."""
+        pass
+
+    @abstractmethod
+    def stop(self):
+        """Stop listening."""
+        pass
+
+    def execute_action(self, action, params=None):
+        """Execute a slideshow control action."""
+        params = params or {}
+
+        if action == "toggle_pause":
+            if self.slideshow.paused:
+                self.slideshow.resume()
+            else:
+                self.slideshow.pause()
+
+        elif action == "pause":
+            self.slideshow.pause()
+
+        elif action == "resume":
+            self.slideshow.resume()
+
+        elif action == "skip":
+            self.slideshow.skip()
+
+        elif action == "speed_up":
+            new_duration = max(5, self.slideshow.display_duration - 5)
+            self.slideshow.set_duration(new_duration)
+
+        elif action == "speed_down":
+            new_duration = min(120, self.slideshow.display_duration + 5)
+            self.slideshow.set_duration(new_duration)
+
+        elif action == "set_duration":
+            seconds = params.get("seconds", 35)
+            self.slideshow.set_duration(seconds)
+
+        elif action == "toggle_monitor":
+            if self.slideshow.monitor.is_on:
+                self.slideshow.monitor.turn_off()
+            else:
+                self.slideshow.monitor.turn_on()
+
+        elif action == "monitor_on":
+            self.slideshow.monitor.turn_on()
+
+        elif action == "monitor_off":
+            self.slideshow.monitor.turn_off()
+
+        elif action == "filter_clear":
+            self.slideshow.clear_filter()
+
+        elif action == "set_filter":
+            folder = params.get("folder")
+            if folder:
+                self.slideshow.set_filter(folder)
+
+        elif action.startswith("filter_"):
+            # Handle numbered filter shortcuts
+            folder = params.get(action)
+            if folder:
+                self.slideshow.set_filter(folder)
+
+        else:
+            print(f"Unknown action: {action}")
+
+
+# =============================================================================
+# WEB UI - Load from static file
+# =============================================================================
+
+# Path to static files directory (relative to script location)
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+def load_web_ui():
+    """Load web UI HTML from static file."""
+    html_path = os.path.join(STATIC_DIR, "index.html")
+    try:
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return """<!DOCTYPE html>
+<html><head><title>Error</title></head>
+<body><h1>Web UI not found</h1>
+<p>Expected file at: {}</p>
+<p>API endpoints still work: /status, /pause, /resume, /skip, etc.</p>
+</body></html>""".format(html_path)
+
+
+class HTTPAPIRemoteControl(RemoteControlProvider):
+    """
+    HTTP REST API for remote control.
+
+    Advantages:
+    - Works from any device (phone, computer, smart home system)
+    - Easy to integrate with automation tools
+    - No additional hardware
+
+    Endpoints:
+    - GET /status - Current slideshow status
+    - GET /pause - Pause slideshow
+    - GET /resume - Resume slideshow
+    - GET /skip - Skip to next image
+    - GET /duration?seconds=N - Set display duration
+    - GET /filter?folder=NAME - Filter by folder
+    - GET /filter/clear - Clear filter
+    - GET /monitor/on - Turn monitor on
+    - GET /monitor/off - Turn monitor off
+    """
+
+    def __init__(self, config, slideshow):
+        super().__init__(slideshow)
+        self.port = config.get("port", 8080)
+        self._server = None
+        self._thread = None
+
+    def start(self):
+        handler = self._create_handler()
+        self._server = HTTPServer(('0.0.0.0', self.port), handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        print(f"HTTP API server running on port {self.port}")
+
+    def stop(self):
+        if self._server:
+            self._server.shutdown()
+
+    def _create_handler(self):
+        """Create request handler with reference to this controller."""
+        controller = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                print(f"API: {args[0]}")
+
+            def send_json(self, data, status=200):
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(data).encode())
+
+            def send_html(self, html):
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(html.encode())
+
+            def do_GET(self):
+                parsed = urlparse(self.path)
+                path = parsed.path
+                params = parse_qs(parsed.query)
+
+                # Serve web UI at root
+                if path == '/' or path == '/index.html':
+                    self.send_html(load_web_ui())
+                    return
+
+                if path == '/status':
+                    self.send_json(controller.slideshow.get_status())
+
+                elif path == '/pause':
+                    controller.execute_action("pause")
+                    self.send_json({"success": True, "paused": True})
+
+                elif path == '/resume':
+                    controller.execute_action("resume")
+                    self.send_json({"success": True, "paused": False})
+
+                elif path == '/skip':
+                    controller.execute_action("skip")
+                    self.send_json({"success": True})
+
+                elif path == '/duration':
+                    if 'seconds' in params:
+                        seconds = int(params['seconds'][0])
+                        controller.execute_action("set_duration", {"seconds": seconds})
+                        self.send_json({"success": True, "duration": seconds})
+                    else:
+                        self.send_json({"error": "Missing 'seconds' parameter"}, 400)
+
+                elif path == '/filter':
+                    if 'folder' in params:
+                        controller.execute_action("set_filter", {"folder": params['folder'][0]})
+                        self.send_json({"success": True, "filter": params['folder'][0]})
+                    else:
+                        self.send_json({"error": "Missing 'folder' parameter"}, 400)
+
+                elif path == '/filter/clear':
+                    controller.execute_action("filter_clear")
+                    self.send_json({"success": True, "filter": None})
+
+                elif path == '/monitor/on':
+                    controller.execute_action("monitor_on")
+                    self.send_json({"success": True, "monitor_on": True})
+
+                elif path == '/monitor/off':
+                    controller.execute_action("monitor_off")
+                    self.send_json({"success": True, "monitor_on": False})
+
+                elif path == '/folders':
+                    folders = set()
+                    for root, dirs, _ in os.walk(controller.slideshow.image_dir):
+                        rel_root = os.path.relpath(root, controller.slideshow.image_dir)
+                        if rel_root != '.':
+                            folders.add(rel_root)
+                        for d in dirs:
+                            folders.add(os.path.join(rel_root, d) if rel_root != '.' else d)
+                    self.send_json({"folders": sorted(folders)})
+
+                else:
+                    self.send_json({
+                        "endpoints": [
+                            "GET /status - Current status",
+                            "GET /pause - Pause slideshow",
+                            "GET /resume - Resume slideshow",
+                            "GET /skip - Skip to next image",
+                            "GET /duration?seconds=N - Set display duration",
+                            "GET /filter?folder=NAME - Show only images from folder",
+                            "GET /filter/clear - Clear folder filter",
+                            "GET /folders - List available folders",
+                            "GET /monitor/on - Turn monitor on",
+                            "GET /monitor/off - Turn monitor off"
+                        ]
+                    })
+
+        return Handler
+
+
+class IRRemoteControl(RemoteControlProvider):
+    """
+    IR Remote control using Linux input subsystem (ir-keytable).
+
+    Requirements:
+    - IR receiver module (VS1838B or similar, ~€2)
+    - ir-keytable configured
+    - Any IR remote
+
+    Setup:
+    1. Add to /boot/config.txt: dtoverlay=gpio-ir,gpio_pin=18
+    2. Find device: ir-keytable -t -d /dev/input/event0
+    3. Configure key_map in config.json
+
+    Advantages:
+    - Works without network
+    - Repurpose any old remote
+    - Very responsive
+
+    Limitations:
+    - Requires line of sight to receiver
+    - Need to learn remote codes
+    """
+
+    # Linux input event structure constants
+    EV_KEY = 0x01
+    KEY_PRESS = 1
+
+    # Common IR remote key codes (from linux/input-event-codes.h)
+    KEY_CODES = {
+        "KEY_POWER": 116, "KEY_PLAY": 207, "KEY_PAUSE": 119,
+        "KEY_PLAYPAUSE": 164, "KEY_STOP": 128, "KEY_NEXT": 163,
+        "KEY_PREVIOUS": 165, "KEY_UP": 103, "KEY_DOWN": 108,
+        "KEY_LEFT": 105, "KEY_RIGHT": 106, "KEY_OK": 352,
+        "KEY_ENTER": 28, "KEY_0": 11, "KEY_1": 2, "KEY_2": 3,
+        "KEY_3": 4, "KEY_4": 5, "KEY_5": 6, "KEY_6": 7,
+        "KEY_7": 8, "KEY_8": 9, "KEY_9": 10, "KEY_VOLUMEUP": 115,
+        "KEY_VOLUMEDOWN": 114, "KEY_MUTE": 113, "KEY_MENU": 139,
+        "KEY_BACK": 158, "KEY_HOME": 172, "KEY_INFO": 358,
+        "KEY_RED": 398, "KEY_GREEN": 399, "KEY_YELLOW": 400,
+        "KEY_BLUE": 401,
+    }
+
+    def __init__(self, config, slideshow):
+        super().__init__(slideshow)
+        self.device_path = config.get("device", "/dev/input/event0")
+        self.key_map = config.get("key_map", {})
+        self.folder_shortcuts = config.get("folder_shortcuts", {})
+        self._running = False
+        self._thread = None
+        self._device_fd = None
+
+    def start(self):
+        try:
+            self._device_fd = open(self.device_path, 'rb')
+            self._running = True
+            self._thread = threading.Thread(target=self._listen_loop, daemon=True)
+            self._thread.start()
+            print(f"IR remote listening on {self.device_path}")
+        except FileNotFoundError:
+            print(f"IR device not found: {self.device_path}")
+            print("Make sure ir-keytable is configured and the IR receiver is connected")
+        except PermissionError:
+            print(f"Permission denied for {self.device_path}")
+            print("Add user to 'input' group: sudo usermod -aG input pi")
+
+    def stop(self):
+        self._running = False
+        if self._device_fd:
+            self._device_fd.close()
+
+    def _code_to_name(self, code):
+        """Convert key code to key name."""
+        for name, c in self.KEY_CODES.items():
+            if c == code:
+                return name
+        return None
+
+    def _listen_loop(self):
+        """Main loop reading input events."""
+        import struct
+
+        EVENT_SIZE = 24
+        EVENT_FORMAT = 'llHHI'
+
+        sel = selectors.DefaultSelector()
+        sel.register(self._device_fd, selectors.EVENT_READ)
+
+        while self._running:
+            events = sel.select(timeout=1.0)
+            if not events:
+                continue
+
+            try:
+                data = self._device_fd.read(EVENT_SIZE)
+                if not data or len(data) < EVENT_SIZE:
+                    continue
+
+                _, _, ev_type, ev_code, ev_value = struct.unpack(EVENT_FORMAT, data)
+
+                if ev_type == self.EV_KEY and ev_value == self.KEY_PRESS:
+                    key_name = self._code_to_name(ev_code)
+                    if key_name:
+                        self._handle_key(key_name)
+                    else:
+                        print(f"IR: Unknown key code {ev_code}")
+
+            except Exception as e:
+                if self._running:
+                    print(f"IR read error: {e}")
+
+        sel.close()
+
+    def _handle_key(self, key_name):
+        """Handle a key press."""
+        action = self.key_map.get(key_name)
+        if not action:
+            print(f"IR: No action mapped for {key_name}")
+            return
+
+        print(f"IR: {key_name} -> {action}")
+
+        # Pass folder shortcuts as params for filter actions
+        if action.startswith("filter_") and action != "filter_clear":
+            folder = self.folder_shortcuts.get(action)
+            if folder:
+                self.execute_action("set_filter", {"folder": folder})
+            else:
+                print(f"IR: No folder configured for {action}")
+        else:
+            self.execute_action(action)
+
+
+# =============================================================================
+# SLIDESHOW CORE
+# =============================================================================
+
+class Slideshow:
+    """Core slideshow engine with plugin support."""
+
+    def __init__(self, config):
+        self.config = config
+        self.running = True
+        self.paused = False
+        self.display_duration = config["display_duration"]
+        self.fade_steps = config["fade_steps"]
+        self.image_dir = config["image_dir"]
+        self.current_filter = None
+
+        # Initialize monitor control
+        self.monitor = create_monitor_control(config.get("monitor_control", {}))
+
+        # Initialize pygame display
+        pygame.display.init()
+        pygame.init()
+        pygame.mouse.set_visible(False)
+
+        info = pygame.display.Info()
+        print(f"Driver: {pygame.display.get_driver()}")
+        print(f"Detected resolution: {info.current_w}x{info.current_h}")
+
+        self.screen = pygame.display.set_mode(
+            (info.current_w, info.current_h),
+            pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE
+        )
+
+        self.width, self.height = self.screen.get_size()
+        self.clock = pygame.time.Clock()
+        self.fade_surface = pygame.Surface((self.width, self.height)).convert()
+        self.fade_surface.fill((0, 0, 0))
+
+        self.playlist = []
+        self.current_img = None
+        self.current_path = None
+        self._skip_requested = False
+
+        self.lock = threading.Lock()
+
+        signal.signal(signal.SIGTERM, self.handle_exit_signal)
+        signal.signal(signal.SIGINT, self.handle_exit_signal)
+
+    def handle_exit_signal(self, signum, frame):
+        print("Shutdown signal received. Stopping slideshow...")
+        self.running = False
+        pygame.quit()
+        sys.exit(0)
+
+    def get_images(self):
+        """Get images, optionally filtered by folder."""
+        images = []
+        for root, _, files in os.walk(self.image_dir):
+            if self.current_filter and self.current_filter not in root:
+                continue
+            for f in files:
+                if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    images.append(os.path.join(root, f))
+        return images
+
+    def fade_transition(self, next_img):
+        steps = self.fade_steps
+        for i in range(steps, -1, -1):
+            alpha = int((i / steps) * 255)
+            self.screen.blit(next_img, (0, 0))
+            self.fade_surface.set_alpha(alpha)
+            self.screen.blit(self.fade_surface, (0, 0))
+            pygame.display.flip()
+            self.clock.tick(30)
+
+    def get_status(self):
+        with self.lock:
+            return {
+                "running": self.running,
+                "paused": self.paused,
+                "monitor_on": self.monitor.is_on,
+                "display_duration": self.display_duration,
+                "current_image": self.current_path,
+                "filter": self.current_filter,
+                "playlist_size": len(self.playlist)
+            }
+
+    def set_duration(self, seconds):
+        with self.lock:
+            self.display_duration = max(1, min(300, seconds))
+            print(f"Display duration set to {self.display_duration}s")
+
+    def set_filter(self, folder_filter):
+        with self.lock:
+            self.current_filter = folder_filter
+            self.playlist = []
+            print(f"Filter set to: {folder_filter}")
+
+    def clear_filter(self):
+        with self.lock:
+            self.current_filter = None
+            self.playlist = []
+            print("Filter cleared")
+
+    def pause(self):
+        with self.lock:
+            self.paused = True
+            print("Slideshow paused")
+
+    def resume(self):
+        with self.lock:
+            self.paused = False
+            print("Slideshow resumed")
+
+    def skip(self):
+        with self.lock:
+            self._skip_requested = True
+            print("Skipping to next image")
+
+    def run(self):
+        while self.running:
+            if self.paused:
+                time.sleep(0.5)
+                continue
+
+            if not self.playlist:
+                self.playlist = self.get_images()
+                if not self.playlist:
+                    time.sleep(5)
+                    continue
+                random.shuffle(self.playlist)
+
+            path = self.playlist.pop(0)
+            self.current_path = path
+
+            try:
+                img = pygame.image.load(path)
+                img = pygame.transform.scale(img, (self.width, self.height)).convert()
+            except Exception as e:
+                print(f"Error loading {path}: {e}")
+                continue
+
+            if self.current_img is None:
+                self.screen.blit(img, (0, 0))
+                pygame.display.flip()
+            else:
+                self.fade_transition(img)
+
+            self.current_img = img
+
+            self._skip_requested = False
+            elapsed = 0
+            while elapsed < self.display_duration and self.running and not self._skip_requested:
+                if self.paused:
+                    time.sleep(0.5)
+                    continue
+                time.sleep(0.5)
+                elapsed += 0.5
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def main():
+    # Load config from multiple possible locations
+    config_paths = [
+        "/home/pi/slideshow/config.json",
+        "/home/pi/config.json",
+        os.path.join(os.path.dirname(__file__), "config.json")
+    ]
+
+    config = None
+    for path in config_paths:
+        if os.path.exists(path):
+            config = load_config(path)
+            print(f"Loaded config from {path}")
+            break
+
+    if config is None:
+        config = load_config("/nonexistent")  # Will use defaults
+        print("Using default configuration")
+
+    # Create slideshow
+    app = Slideshow(config)
+
+    # Initialize remote control providers
+    remote_controls = []
+    rc_config = config.get("remote_control", {})
+
+    # HTTP API
+    http_config = rc_config.get("http_api", {})
+    if http_config.get("enabled", True):
+        http_api = HTTPAPIRemoteControl(http_config, app)
+        http_api.start()
+        remote_controls.append(http_api)
+
+    # IR Remote
+    ir_config = rc_config.get("ir_remote", {})
+    if ir_config.get("enabled", False):
+        ir_remote = IRRemoteControl(ir_config, app)
+        ir_remote.start()
+        remote_controls.append(ir_remote)
+
+    # Initialize motion sensor
+    motion_config = config.get("motion_sensor", {})
+    motion_sensor = create_motion_sensor(
+        motion_config,
+        on_motion=lambda: app.monitor.turn_on(),
+        on_idle=lambda: app.monitor.turn_off()
+    )
+    motion_sensor.start()
+
+    # Run slideshow
+    try:
+        app.run()
+    finally:
+        # Cleanup
+        motion_sensor.stop()
+        for rc in remote_controls:
+            rc.stop()
+
+
+if __name__ == "__main__":
+    main()
