@@ -4,7 +4,7 @@
     "fade_steps": 5,
 
     "monitor_control": {
-        "provider": "none",
+        "provider": "cec",
         "cec": {
             "device_id": "0"
         },

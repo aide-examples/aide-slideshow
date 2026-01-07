@@ -1,8 +1,86 @@
-# Raspberry Pi Photo Slideshow
+# Photo Slideshow
 
-A modular fullscreen photo slideshow for Raspberry Pi with a plugin architecture for different hardware setups.
+A modular fullscreen photo slideshow with a plugin architecture for different hardware setups.
 
-Designed to run on a Raspberry Pi connected to a Samsung "The Frame" TV (or any HDMI display) as a digital photo frame.
+Designed to run on a dedicated device connected to a wall mounted display as a digital photo frame.
+
+## Platform Choice
+
+We are looking for a cheap platform which can store a lot of images and display them via HDMI.
+It must be strong enough to host a small web server, so that we conveniently can upload images
+and control the device via a mobile phone. Furthermore the device should be small and energy efficient.
+It must allow to connect sensors for motion and darkness because we want to switch the system
+off when no human is around. Ideally we want to adapt brightness depending on ambient light.
+Maybe we also want to power on/off the display to save energy.
+
+An ESP32 based system would be too weak, even if we had a storage card connected. So the natural
+choice is a Raspberry. We aim to use the Rpi Zero 2WH because it has everything we need:
+A multitasking OS, HDMI output and USB ports, GPIOs (to connect a motion sensor) and an SD card
+which will be able to store thousands of images. However, there is not much memory (512 MB RAM).
+
+The original idea was to run a chromium browser page in kiosk mode. Hardware access might be 
+somewhat problematic, however, and we would need to install the full desktop OS to run the browser.
+Tests showed that it could work on an old Raspi 3B (similar processor as 2WH but 1024 MB of memory)
+but sometimes the screen was not refreshed properly, most probably due to memory bottlenecks.
+
+So the choice went for a python script which draws directly into the grahical memory using
+pygame and a suitable driver (vc4-kms-v3d). If we are carefully setting the limits for the GPU
+we will have sufficient memory for the python process - which must not only read images but shall
+also handle a Web API and optionally be able to take commands from a classical infrared remote control.
+
+
+## Requirements
+
+This is a maximal list of potential features. Those marked with an (*) are already implented
+(*-) means partially implemented.
+
+- show images
+  - in random order (*)
+  - all or from a sub selection (*)
+  - restrict shown images to those matching a certain monitor orientation (portrait/l0andscape)
+  - recognize current monitor orientation (tilt sensor)
+  - show image exactly if it meets the monitor resolution (*)
+  - adapt image size cleverly
+  - adapt brightness to ambient light
+  - offer options for borders/frames
+
+- energy
+  - run on an energy efficient device (*)
+  - switch the monitor off when no images shall be shown (*-)
+  - react on motion detection
+  - allow time dependant on/off periods
+  - allow daylight dependant on/off periods
+  - adapt brightness to ambient light conditions
+
+- control (how)
+  - via mouse
+  - via keyboard
+  - via an REST API (*)
+  - via an HTTP UI (*)
+  - via an infrared remote control
+
+- control (what)
+  - play (*)
+  - pause (*)
+  - forward/skip (*)
+  - backward
+  - random sequence (*)
+  - canonical sequence
+  - select image group via directory (*)
+  - presentation speed (*)
+  - type of image change (slide, fade, ..)
+  - monitor on/off via CEC (*)
+  - monitor on/off via relay (AC power)
+  - monitor on/off via shelly plug
+
+
+- image administration
+  - sftp access to image directory (*)
+  - batch upload via API
+  - interactive upload via a web client (*) - installed "filebrowser" executable
+  - image pre-formatting for optimal display
+
+
 
 ## Architecture Overview
 
