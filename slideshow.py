@@ -1016,22 +1016,44 @@ class RemoteControlProvider(ABC):
 # =============================================================================
 
 # Path to static files directory (relative to script location)
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(SCRIPT_DIR, "static")
+
+# MIME types for static file serving
+MIME_TYPES = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'application/javascript; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.md': 'text/markdown; charset=utf-8',
+}
 
 
-def load_web_ui():
-    """Load web UI HTML from static file."""
-    html_path = os.path.join(STATIC_DIR, "index.html")
+def load_static_file(filename, binary=False):
+    """Load a file from the static directory."""
+    filepath = os.path.join(STATIC_DIR, filename)
     try:
-        with open(html_path, 'r', encoding='utf-8') as f:
+        mode = 'rb' if binary else 'r'
+        encoding = None if binary else 'utf-8'
+        with open(filepath, mode, encoding=encoding) as f:
             return f.read()
     except FileNotFoundError:
-        return """<!DOCTYPE html>
-<html><head><title>Error</title></head>
-<body><h1>Web UI not found</h1>
-<p>Expected file at: {}</p>
-<p>API endpoints still work: /status, /pause, /resume, /skip, etc.</p>
-</body></html>""".format(html_path)
+        return None
+
+
+def load_readme():
+    """Load README.md from the project root."""
+    readme_path = os.path.join(SCRIPT_DIR, "README.md")
+    try:
+        with open(readme_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "# README not found\n\nThe README.md file was not found in the project directory."
 
 
 class HTTPAPIRemoteControl(RemoteControlProvider):
@@ -1093,6 +1115,25 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                 self.end_headers()
                 self.wfile.write(html.encode())
 
+            def send_static_file(self, filename):
+                """Serve a static file with appropriate MIME type."""
+                ext = os.path.splitext(filename)[1].lower()
+                mime_type = MIME_TYPES.get(ext, 'application/octet-stream')
+                is_binary = ext in ('.png', '.jpg', '.jpeg', '.ico')
+
+                content = load_static_file(filename, binary=is_binary)
+                if content is None:
+                    self.send_error(404, f"File not found: {filename}")
+                    return
+
+                self.send_response(200)
+                self.send_header('Content-Type', mime_type)
+                self.end_headers()
+                if is_binary:
+                    self.wfile.write(content)
+                else:
+                    self.wfile.write(content.encode())
+
             def do_GET(self):
                 parsed = urlparse(self.path)
                 path = parsed.path
@@ -1100,7 +1141,27 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
 
                 # Serve web UI at root
                 if path == '/' or path == '/index.html':
-                    self.send_html(load_web_ui())
+                    self.send_static_file('index.html')
+                    return
+
+                # Serve static files from /static/ path
+                if path.startswith('/static/'):
+                    filename = path[8:]  # Remove '/static/' prefix
+                    # Security: prevent directory traversal
+                    if '..' in filename or filename.startswith('/'):
+                        self.send_error(403, "Forbidden")
+                        return
+                    self.send_static_file(filename)
+                    return
+
+                # Serve about page
+                if path == '/about' or path == '/about.html':
+                    self.send_static_file('about.html')
+                    return
+
+                # Serve README.md content as JSON (for the about page)
+                if path == '/readme':
+                    self.send_json({"content": load_readme()})
                     return
 
                 if path == '/status':
