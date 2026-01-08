@@ -1056,6 +1056,110 @@ def load_readme():
         return "# README not found\n\nThe README.md file was not found in the project directory."
 
 
+# =============================================================================
+# IMAGE PREPARATION - Lazy import and job management
+# =============================================================================
+
+# Lazy-loaded module reference
+_imgPrepare = None
+
+
+def get_imgPrepare():
+    """Lazy import of imgPrepare module to avoid loading PIL until needed."""
+    global _imgPrepare
+    if _imgPrepare is None:
+        try:
+            import imgPrepare as module
+            _imgPrepare = module
+            print("imgPrepare module loaded")
+        except ImportError as e:
+            print(f"Failed to import imgPrepare: {e}")
+            return None
+    return _imgPrepare
+
+
+class ImagePrepareJob:
+    """Manages a background image preparation job."""
+
+    def __init__(self):
+        self.running = False
+        self.cancelled = False
+        self.progress = None  # Current PrepareProgress
+        self.counts = {"processed": 0, "exists": 0, "error": 0}
+        self.error = None
+        self._thread = None
+        self._lock = threading.Lock()
+
+    def start(self, config):
+        """Start processing in background thread."""
+        if self.running:
+            return False, "Job already running"
+
+        module = get_imgPrepare()
+        if module is None:
+            return False, "imgPrepare module not available"
+
+        self.running = True
+        self.cancelled = False
+        self.progress = None
+        self.counts = {"processed": 0, "exists": 0, "error": 0}
+        self.error = None
+
+        self._thread = threading.Thread(target=self._run, args=(module, config), daemon=True)
+        self._thread.start()
+        return True, "Job started"
+
+    def _run(self, module, config):
+        """Background processing loop."""
+        try:
+            gen = module.process_folder_iter(config)
+            for progress in gen:
+                if self.cancelled:
+                    break
+                with self._lock:
+                    self.progress = progress
+                    self.counts[progress.status] = self.counts.get(progress.status, 0) + 1
+        except Exception as e:
+            self.error = str(e)
+            print(f"ImagePrepareJob error: {e}")
+        finally:
+            self.running = False
+
+    def cancel(self):
+        """Request cancellation of running job."""
+        self.cancelled = True
+
+    def get_status(self):
+        """Get current job status."""
+        with self._lock:
+            if self.progress:
+                return {
+                    "running": self.running,
+                    "cancelled": self.cancelled,
+                    "current": self.progress.current,
+                    "total": self.progress.total,
+                    "percent": round(100 * self.progress.current / self.progress.total, 1) if self.progress.total > 0 else 0,
+                    "current_file": self.progress.filepath,
+                    "counts": self.counts.copy(),
+                    "error": self.error,
+                }
+            else:
+                return {
+                    "running": self.running,
+                    "cancelled": self.cancelled,
+                    "current": 0,
+                    "total": 0,
+                    "percent": 0,
+                    "current_file": None,
+                    "counts": self.counts.copy(),
+                    "error": self.error,
+                }
+
+
+# Global job instance (only one job at a time)
+_prepare_job = ImagePrepareJob()
+
+
 class HTTPAPIRemoteControl(RemoteControlProvider):
     """
     HTTP REST API for remote control.
@@ -1239,6 +1343,43 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                             folders.add(os.path.join(rel_root, d) if rel_root != '.' else d)
                     self.send_json({"folders": sorted(folders)})
 
+                # Image preparation endpoints
+                elif path == '/prepare' or path == '/prepare.html':
+                    self.send_static_file('prepare.html')
+
+                elif path == '/api/prepare/status':
+                    self.send_json(_prepare_job.get_status())
+
+                elif path == '/api/prepare/cancel':
+                    _prepare_job.cancel()
+                    self.send_json({"success": True, "message": "Cancellation requested"})
+
+                elif path == '/api/prepare/count':
+                    # Count images in a directory (for preview)
+                    directory = params.get('dir', [controller.slideshow.image_dir])[0]
+                    module = get_imgPrepare()
+                    if module:
+                        from pathlib import Path
+                        count = module.count_image_files(Path(directory))
+                        self.send_json({"count": count, "directory": directory})
+                    else:
+                        self.send_json({"error": "imgPrepare not available"}, 500)
+
+                elif path == '/api/prepare/defaults':
+                    # Return default configuration and paths
+                    self.send_json({
+                        "input_dir": controller.slideshow.image_dir,
+                        "output_dir": controller.slideshow.image_dir,
+                        "mode": "hybrid-stretch",
+                        "target_size": "1920x1080",
+                        "pad_mode": "average",
+                        "crop_min": 0.8,
+                        "stretch_max": 0.2,
+                        "no_stretch_limit": 0.4,
+                        "modes": ["pad", "crop", "hybrid", "hybrid-stretch"],
+                        "pad_modes": ["gray", "white", "black", "average"],
+                    })
+
                 else:
                     self.send_json({
                         "endpoints": [
@@ -1251,9 +1392,72 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                             "GET /filter/clear - Clear folder filter",
                             "GET /folders - List available folders",
                             "GET /monitor/on - Turn monitor on",
-                            "GET /monitor/off - Turn monitor off"
+                            "GET /monitor/off - Turn monitor off",
+                            "GET /prepare - Image preparation UI",
+                            "GET /api/prepare/status - Preparation job status",
+                            "POST /api/prepare/start - Start preparation job",
+                            "GET /api/prepare/cancel - Cancel running job",
                         ]
                     })
+
+            def do_POST(self):
+                parsed = urlparse(self.path)
+                path = parsed.path
+
+                # Read POST body
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+
+                try:
+                    data = json.loads(body) if body else {}
+                except json.JSONDecodeError:
+                    self.send_json({"error": "Invalid JSON"}, 400)
+                    return
+
+                if path == '/api/prepare/start':
+                    module = get_imgPrepare()
+                    if not module:
+                        self.send_json({"error": "imgPrepare module not available"}, 500)
+                        return
+
+                    # Parse configuration from POST data
+                    from pathlib import Path as PathLib
+                    try:
+                        # Parse target size
+                        size_str = data.get('target_size', '1920x1080')
+                        if isinstance(size_str, str):
+                            w, h = size_str.lower().split('x')
+                            target_size = (int(w), int(h))
+                        else:
+                            target_size = tuple(size_str)
+
+                        config = module.PrepareConfig(
+                            input_dir=PathLib(data.get('input_dir', controller.slideshow.image_dir)),
+                            output_dir=PathLib(data.get('output_dir', controller.slideshow.image_dir)),
+                            mode=data.get('mode', 'hybrid-stretch'),
+                            target_size=target_size,
+                            pad_mode=data.get('pad_mode', 'average'),
+                            crop_min=float(data.get('crop_min', 0.8)),
+                            stretch_max=float(data.get('stretch_max', 0.2)),
+                            no_stretch_limit=float(data.get('no_stretch_limit', 0.4)),
+                            show_text=bool(data.get('show_text', False)),
+                            skip_existing=bool(data.get('skip_existing', True)),
+                            dry_run=bool(data.get('dry_run', False)),
+                            flatten=bool(data.get('flatten', False)),
+                            quiet=True,  # Don't spam console from web jobs
+                        )
+
+                        success, message = _prepare_job.start(config)
+                        if success:
+                            self.send_json({"success": True, "message": message})
+                        else:
+                            self.send_json({"success": False, "error": message}, 409)
+
+                    except Exception as e:
+                        self.send_json({"error": str(e)}, 400)
+
+                else:
+                    self.send_json({"error": "Unknown endpoint"}, 404)
 
         return Handler
 

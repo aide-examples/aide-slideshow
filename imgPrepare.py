@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-FotoFrame - Image resizer for digital photo frames.
+imgPrepare - Image resizer for digital photo frames.
 
 Resizes images to a target resolution (default 1920x1080) using various
 strategies: padding, cropping, hybrid, or hybrid with stretching.
+
+Can be used as:
+- Standalone CLI tool: python imgPrepare.py input/ output/
+- Imported module: from imgPrepare import process_folder_iter, PrepareConfig
 """
 
 import argparse
+import gc
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Generator
 
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 
@@ -21,6 +28,36 @@ except ImportError:
 
 EPS = 1e-6
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".heic", ".avif"}
+
+
+@dataclass
+class PrepareConfig:
+    """Configuration for image preparation."""
+    input_dir: Path
+    output_dir: Path
+    mode: str = "hybrid-stretch"
+    target_size: tuple[int, int] = (1920, 1080)
+    pad_mode: str = "average"
+    crop_min: float = 0.8
+    stretch_max: float = 0.2
+    no_stretch_limit: float = 0.4
+    show_text: bool = False
+    skip_existing: bool = True
+    dry_run: bool = False
+    flatten: bool = False
+    verbose: bool = False
+    quiet: bool = False
+
+
+@dataclass
+class PrepareProgress:
+    """Progress info yielded during processing."""
+    current: int
+    total: int
+    filepath: str
+    output_path: str
+    status: str  # 'processed', 'exists', 'error'
+    error_message: str | None = None
 
 
 def is_image_file(filename: str) -> bool:
@@ -207,33 +244,43 @@ def process_image(
     dry_run: bool,
     verbose: bool,
     quiet: bool,
-) -> str:
-    """Process a single image. Returns status: 'processed', 'skipped', 'exists', or 'error'."""
-    jpg_path = ensure_jpg(filepath) if not dry_run else filepath
-    if not jpg_path:
-        return "error"
+) -> tuple[str, Path, str | None]:
+    """
+    Process a single image.
 
-    name = Path(filepath).stem
-    if prefix:
-        out_name = f"{prefix} - {name}.jpg"
-        overlay_text = f"{prefix} - {name}"
-    else:
-        out_name = f"{name}.jpg"
-        overlay_text = name
-
-    out_path = output_dir / out_name
-
-    if skip_existing and out_path.exists():
-        if verbose:
-            print(f"Exists: {out_path}")
-        return "exists"
-
-    if dry_run:
-        if not quiet:
-            print(f"Would process: {filepath} -> {out_path}")
-        return "processed"
+    Returns:
+        tuple of (status, output_path, error_message)
+        status: 'processed', 'exists', or 'error'
+    """
+    img = None
+    out_img = None
+    error_message = None
 
     try:
+        jpg_path = ensure_jpg(filepath) if not dry_run else filepath
+        if not jpg_path:
+            return "error", Path(""), "Failed to convert to JPG"
+
+        name = Path(filepath).stem
+        if prefix:
+            out_name = f"{prefix} - {name}.jpg"
+            overlay_text = f"{prefix} - {name}"
+        else:
+            out_name = f"{name}.jpg"
+            overlay_text = name
+
+        out_path = output_dir / out_name
+
+        if skip_existing and out_path.exists():
+            if verbose:
+                print(f"Exists: {out_path}")
+            return "exists", out_path, None
+
+        if dry_run:
+            if not quiet:
+                print(f"Would process: {filepath} -> {out_path}")
+            return "processed", out_path, None
+
         img = Image.open(jpg_path).convert("RGB")
 
         if mode == "pad":
@@ -256,11 +303,117 @@ def process_image(
         out_img.save(out_path, "JPEG", quality=95)
         if not quiet:
             print(f"Saved: {out_path}")
-        return "processed"
+        return "processed", out_path, None
 
     except Exception as e:
+        error_message = str(e)
         print(f"Error processing {filepath}: {e}", file=sys.stderr)
-        return "error"
+        return "error", Path(""), error_message
+
+    finally:
+        # Explicit cleanup to release memory
+        if img is not None:
+            img.close()
+            del img
+        if out_img is not None:
+            out_img.close()
+            del out_img
+
+
+def count_image_files(input_dir: Path) -> int:
+    """Count total image files in directory (for progress estimation)."""
+    count = 0
+    if not input_dir.is_dir():
+        return 0
+    for root, _, files in os.walk(input_dir):
+        for filename in files:
+            if is_image_file(filename):
+                count += 1
+    return count
+
+
+def list_subdirs(directory: Path) -> list[str]:
+    """List all subdirectories (for UI folder selection)."""
+    subdirs = []
+    if not directory.is_dir():
+        return subdirs
+    for root, dirs, _ in os.walk(directory):
+        rel_root = Path(root).relative_to(directory)
+        for d in dirs:
+            subdir = str(rel_root / d) if rel_root != Path(".") else d
+            subdirs.append(subdir)
+    return sorted(subdirs)
+
+
+def process_folder_iter(config: PrepareConfig) -> Generator[PrepareProgress, None, dict[str, int]]:
+    """
+    Process all images with progress reporting via generator.
+
+    Yields PrepareProgress for each file processed.
+    Returns final counts dict when complete.
+
+    Usage:
+        config = PrepareConfig(input_dir=Path("in"), output_dir=Path("out"))
+        gen = process_folder_iter(config)
+        for progress in gen:
+            print(f"{progress.current}/{progress.total}: {progress.status}")
+        # Generator returns final counts (access via StopIteration.value or wrapper)
+    """
+    # Collect files first to know total count
+    files_to_process = []
+    for root, _, files in os.walk(config.input_dir):
+        root_path = Path(root)
+        rel_path = root_path.relative_to(config.input_dir)
+
+        if config.flatten:
+            target_dir = config.output_dir
+            prefix = "" if rel_path == Path(".") else str(rel_path).replace(os.sep, " - ")
+        else:
+            target_dir = config.output_dir / rel_path
+            prefix = ""
+
+        for filename in files:
+            if is_image_file(filename):
+                files_to_process.append((root_path / filename, target_dir, prefix))
+
+    total = len(files_to_process)
+    counts = {"processed": 0, "exists": 0, "error": 0}
+
+    for i, (filepath, target_dir, prefix) in enumerate(files_to_process, 1):
+        status, out_path, error_msg = process_image(
+            filepath,
+            target_dir,
+            prefix,
+            config.mode,
+            config.target_size,
+            config.pad_mode,
+            config.crop_min,
+            config.stretch_max,
+            config.no_stretch_limit,
+            config.show_text,
+            config.skip_existing,
+            config.dry_run,
+            config.verbose,
+            config.quiet,
+        )
+        counts[status] = counts.get(status, 0) + 1
+
+        yield PrepareProgress(
+            current=i,
+            total=total,
+            filepath=str(filepath),
+            output_path=str(out_path),
+            status=status,
+            error_message=error_msg,
+        )
+
+        # Force garbage collection every 10 images to keep memory in check
+        if i % 10 == 0:
+            gc.collect()
+
+    # Final cleanup
+    gc.collect()
+    return counts
 
 
 def process_folder(
@@ -280,43 +433,34 @@ def process_folder(
     quiet: bool,
 ) -> dict[str, int]:
     """Process all images in folder recursively. Returns counts by status."""
+    config = PrepareConfig(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        mode=mode,
+        target_size=target_size,
+        pad_mode=pad_mode,
+        crop_min=crop_min,
+        stretch_max=stretch_max,
+        no_stretch_limit=no_stretch_limit,
+        show_text=show_text,
+        skip_existing=skip_existing,
+        dry_run=dry_run,
+        flatten=flatten,
+        verbose=verbose,
+        quiet=quiet,
+    )
+
     counts = {"processed": 0, "exists": 0, "error": 0}
+    gen = process_folder_iter(config)
 
-    for root, _, files in os.walk(input_dir):
-        root_path = Path(root)
-        rel_path = root_path.relative_to(input_dir)
-
-        if flatten:
-            # All files go to output root, prefix derived from subfolder
-            target_dir = output_dir
-            prefix = "" if rel_path == Path(".") else str(rel_path).replace(os.sep, " - ")
-        else:
-            # Preserve directory structure
-            target_dir = output_dir / rel_path
-            prefix = ""
-
-        for filename in files:
-            if not is_image_file(filename):
-                continue
-
-            filepath = root_path / filename
-            status = process_image(
-                filepath,
-                target_dir,
-                prefix,
-                mode,
-                target_size,
-                pad_mode,
-                crop_min,
-                stretch_max,
-                no_stretch_limit,
-                show_text,
-                skip_existing,
-                dry_run,
-                verbose,
-                quiet,
-            )
-            counts[status] = counts.get(status, 0) + 1
+    # Consume the generator, collecting final counts
+    try:
+        while True:
+            progress = next(gen)
+            counts[progress.status] = counts.get(progress.status, 0) + 1
+    except StopIteration as e:
+        if e.value:
+            counts = e.value
 
     return counts
 

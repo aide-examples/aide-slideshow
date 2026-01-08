@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Image Preparation</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 500px; margin: 0 auto; }
+        h1 {
+            text-align: center;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #e94560;
+        }
+        .card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .card h3 {
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            color: #aaa;
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            font-size: 0.95rem;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+        .checkbox-group label {
+            color: #ccc;
+            font-size: 0.9rem;
+        }
+        button {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 15px 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        button:hover { background: #ff6b6b; }
+        button:active { transform: scale(0.98); }
+        button:disabled { background: #444; cursor: not-allowed; }
+        button.secondary { background: #0f3460; }
+        button.secondary:hover { background: #1a4a7a; }
+        button.danger { background: #b91c1c; }
+        button.danger:hover { background: #dc2626; }
+        .btn-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .progress-card {
+            display: none;
+        }
+        .progress-card.active {
+            display: block;
+        }
+        .progress-bar-container {
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            height: 24px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            text-align: center;
+        }
+        .stat-box {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 10px;
+        }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        .stat-value.processed { color: #4ade80; }
+        .stat-value.exists { color: #fbbf24; }
+        .stat-value.error { color: #f87171; }
+        .stat-label {
+            font-size: 0.75rem;
+            color: #888;
+        }
+        .current-file {
+            font-size: 0.8rem;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 10px;
+        }
+        .nav-links {
+            text-align: center;
+            margin-top: 15px;
+        }
+        .nav-links a {
+            color: #e94560;
+            text-decoration: none;
+            font-size: 0.85rem;
+            margin: 0 10px;
+        }
+        .nav-links a:hover { text-decoration: underline; }
+        .help-text {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 5px;
+        }
+        .status-message {
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        .status-message.success { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+        .status-message.error { background: rgba(248, 113, 113, 0.2); color: #f87171; }
+        .status-message.info { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Image Preparation</h1>
+
+        <div id="message-area"></div>
+
+        <!-- Configuration Form -->
+        <div class="card" id="config-card">
+            <h3>Directories</h3>
+            <div class="form-group">
+                <label>Input Directory</label>
+                <input type="text" id="input_dir" placeholder="/path/to/source/images">
+                <p class="help-text">Source folder with original images</p>
+            </div>
+            <div class="form-group">
+                <label>Output Directory</label>
+                <input type="text" id="output_dir" placeholder="/path/to/output/images">
+                <p class="help-text">Destination for processed images</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Processing Mode</h3>
+            <div class="form-group">
+                <label>Resize Mode</label>
+                <select id="mode">
+                    <option value="hybrid-stretch">Hybrid + Stretch (recommended)</option>
+                    <option value="hybrid">Hybrid (crop then pad)</option>
+                    <option value="crop">Crop only</option>
+                    <option value="pad">Pad only</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Target Size</label>
+                    <select id="target_size">
+                        <option value="1920x1080">1920x1080 (Full HD)</option>
+                        <option value="1280x720">1280x720 (HD)</option>
+                        <option value="2560x1440">2560x1440 (QHD)</option>
+                        <option value="3840x2160">3840x2160 (4K)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Padding Color</label>
+                    <select id="pad_mode">
+                        <option value="average">Average (auto)</option>
+                        <option value="black">Black</option>
+                        <option value="white">White</option>
+                        <option value="gray">Gray</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Advanced Settings</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Crop Min (0.0-1.0)</label>
+                    <input type="number" id="crop_min" value="0.8" min="0" max="1" step="0.05">
+                </div>
+                <div class="form-group">
+                    <label>Stretch Max</label>
+                    <input type="number" id="stretch_max" value="0.2" min="0" max="0.5" step="0.05">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>No-Stretch Limit</label>
+                <input type="number" id="no_stretch_limit" value="0.4" min="0" max="1" step="0.1">
+                <p class="help-text">Aspect ratio deviation beyond which no stretching occurs</p>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="skip_existing" checked>
+                <label for="skip_existing">Skip existing files</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="flatten">
+                <label for="flatten">Flatten output (no subdirectories)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="show_text">
+                <label for="show_text">Overlay filename on images</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="dry_run">
+                <label for="dry_run">Dry run (preview only, no changes)</label>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="btn-row">
+                <button onclick="countImages()" class="secondary">Count Images</button>
+                <button onclick="startJob()">Start Processing</button>
+            </div>
+        </div>
+
+        <!-- Progress Display -->
+        <div class="card progress-card" id="progress-card">
+            <h3>Progress</h3>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar">0%</div>
+            </div>
+            <div class="progress-stats">
+                <div class="stat-box">
+                    <div class="stat-value processed" id="stat-processed">0</div>
+                    <div class="stat-label">Processed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value exists" id="stat-exists">0</div>
+                    <div class="stat-label">Skipped</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value error" id="stat-errors">0</div>
+                    <div class="stat-label">Errors</div>
+                </div>
+            </div>
+            <div class="current-file" id="current-file">Waiting...</div>
+            <button onclick="cancelJob()" class="danger" id="cancel-btn" style="margin-top: 15px;">Cancel</button>
+        </div>
+
+        <div class="nav-links">
+            <a href="/">Slideshow Control</a>
+            <a id="file-manager-link" href="#" target="_blank">File Manager</a>
+            <a href="/about">About</a>
+        </div>
+    </div>
+
+    <script>
+        let pollInterval = null;
+
+        // Load defaults on page load
+        async function loadDefaults() {
+            try {
+                const res = await fetch('/api/prepare/defaults');
+                const data = await res.json();
+                document.getElementById('input_dir').value = data.input_dir || '';
+                document.getElementById('output_dir').value = data.output_dir || '';
+                document.getElementById('mode').value = data.mode || 'hybrid-stretch';
+                document.getElementById('pad_mode').value = data.pad_mode || 'average';
+                document.getElementById('crop_min').value = data.crop_min || 0.8;
+                document.getElementById('stretch_max').value = data.stretch_max || 0.2;
+                document.getElementById('no_stretch_limit').value = data.no_stretch_limit || 0.4;
+            } catch (e) {
+                console.error('Failed to load defaults:', e);
+            }
+
+            // Check if job is already running
+            checkStatus();
+        }
+
+        function showMessage(text, type = 'info') {
+            const area = document.getElementById('message-area');
+            area.innerHTML = `<div class="status-message ${type}">${text}</div>`;
+            setTimeout(() => area.innerHTML = '', 5000);
+        }
+
+        function getConfig() {
+            return {
+                input_dir: document.getElementById('input_dir').value,
+                output_dir: document.getElementById('output_dir').value,
+                mode: document.getElementById('mode').value,
+                target_size: document.getElementById('target_size').value,
+                pad_mode: document.getElementById('pad_mode').value,
+                crop_min: parseFloat(document.getElementById('crop_min').value),
+                stretch_max: parseFloat(document.getElementById('stretch_max').value),
+                no_stretch_limit: parseFloat(document.getElementById('no_stretch_limit').value),
+                skip_existing: document.getElementById('skip_existing').checked,
+                flatten: document.getElementById('flatten').checked,
+                show_text: document.getElementById('show_text').checked,
+                dry_run: document.getElementById('dry_run').checked,
+            };
+        }
+
+        async function countImages() {
+            const inputDir = document.getElementById('input_dir').value;
+            if (!inputDir) {
+                showMessage('Please enter an input directory', 'error');
+                return;
+            }
+            try {
+                const res = await fetch('/api/prepare/count?dir=' + encodeURIComponent(inputDir));
+                const data = await res.json();
+                if (data.error) {
+                    showMessage(data.error, 'error');
+                } else {
+                    showMessage(`Found ${data.count} images in ${data.directory}`, 'success');
+                }
+            } catch (e) {
+                showMessage('Failed to count images: ' + e.message, 'error');
+            }
+        }
+
+        async function startJob() {
+            const config = getConfig();
+            if (!config.input_dir || !config.output_dir) {
+                showMessage('Please enter input and output directories', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/prepare/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showMessage('Job started!', 'success');
+                    document.getElementById('progress-card').classList.add('active');
+                    startPolling();
+                } else {
+                    showMessage(data.error || 'Failed to start job', 'error');
+                }
+            } catch (e) {
+                showMessage('Failed to start job: ' + e.message, 'error');
+            }
+        }
+
+        async function cancelJob() {
+            try {
+                await fetch('/api/prepare/cancel');
+                showMessage('Cancellation requested', 'info');
+            } catch (e) {
+                showMessage('Failed to cancel: ' + e.message, 'error');
+            }
+        }
+
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/prepare/status');
+                const data = await res.json();
+                updateProgressUI(data);
+
+                if (data.running) {
+                    document.getElementById('progress-card').classList.add('active');
+                    if (!pollInterval) startPolling();
+                } else if (pollInterval) {
+                    stopPolling();
+                }
+            } catch (e) {
+                console.error('Status check failed:', e);
+            }
+        }
+
+        function updateProgressUI(data) {
+            const bar = document.getElementById('progress-bar');
+            bar.style.width = data.percent + '%';
+            bar.textContent = data.percent + '%';
+
+            document.getElementById('stat-processed').textContent = data.counts.processed || 0;
+            document.getElementById('stat-exists').textContent = data.counts.exists || 0;
+            document.getElementById('stat-errors').textContent = data.counts.error || 0;
+
+            const currentFile = document.getElementById('current-file');
+            if (data.current_file) {
+                currentFile.textContent = data.current_file.split('/').pop();
+                currentFile.title = data.current_file;
+            } else if (!data.running && data.current > 0) {
+                currentFile.textContent = 'Complete!';
+            } else {
+                currentFile.textContent = 'Waiting...';
+            }
+
+            const cancelBtn = document.getElementById('cancel-btn');
+            cancelBtn.disabled = !data.running;
+            cancelBtn.textContent = data.running ? 'Cancel' : (data.cancelled ? 'Cancelled' : 'Done');
+
+            if (!data.running && data.current > 0) {
+                if (data.cancelled) {
+                    showMessage('Job cancelled', 'info');
+                } else if (data.error) {
+                    showMessage('Job failed: ' + data.error, 'error');
+                } else {
+                    showMessage(`Complete! Processed: ${data.counts.processed}, Skipped: ${data.counts.exists}, Errors: ${data.counts.error}`, 'success');
+                }
+            }
+        }
+
+        function startPolling() {
+            if (pollInterval) return;
+            pollInterval = setInterval(checkStatus, 1000);
+        }
+
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+
+        // Set file manager link
+        document.getElementById('file-manager-link').href =
+            window.location.protocol + '//' + window.location.hostname + ':8081';
+
+        // Initialize
+        loadDefaults();
+    </script>
+</body>
+</html>
