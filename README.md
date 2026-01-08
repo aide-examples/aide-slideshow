@@ -666,6 +666,144 @@ Use IR remote buttons or API to filter by folder.
 
 ---
 
+# Image Preparation
+
+The `imgPrepare.py` module resizes and optimizes images for display on digital photo frames. It can be used as a standalone CLI tool or integrated into the slideshow via the web UI.
+
+## System Architecture
+
+```mermaid
+flowchart TB
+    subgraph UserDevice["User's Device (Browser)"]
+        Browser[Web Browser]
+    end
+
+    subgraph RaspberryPi["Raspberry Pi"]
+        subgraph Slideshow["slideshow.py :8080"]
+            WebUI[Web UI]
+            API[HTTP API]
+            PrepJob[ImagePrepareJob]
+        end
+
+        subgraph ImgPrepare["imgPrepare.py"]
+            Config[PrepareConfig]
+            Progress[PrepareProgress]
+            Generator[process_folder_iter]
+        end
+
+        subgraph FileBrowser["filebrowser :8081"]
+            FB[File Browser UI]
+        end
+
+        ImgDir[(image_dir)]
+    end
+
+    Browser --> WebUI
+    Browser --> FB
+    WebUI --> API
+    API --> PrepJob
+    PrepJob --> Generator
+    Generator --> ImgDir
+    FB --> ImgDir
+```
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Resize Modes** | `pad` (add borders), `crop`, `hybrid` (crop then pad), `hybrid-stretch` (crop, stretch, pad) |
+| **Padding Colors** | `gray`, `white`, `black`, `average` (auto-detected from image) |
+| **Memory Management** | Explicit cleanup after each image, `gc.collect()` every 10 images |
+| **Progress Reporting** | Generator-based streaming for real-time web UI updates |
+| **Lazy Loading** | PIL/Pillow only loaded when preparation is triggered |
+
+## Memory Behavior
+
+| State | Memory Impact |
+|-------|---------------|
+| **Module not used** | No PIL loaded, minimal overhead |
+| **During processing** | ~36MB per large image (4000x3000), released after each image |
+| **GC Strategy** | Explicit `img.close()` + `del` + periodic `gc.collect()` |
+
+## CLI Usage
+
+```bash
+# Basic usage with defaults (hybrid-stretch, 1920x1080, average padding)
+python imgPrepare.py /photos/input /photos/output
+
+# Dry run - preview what would happen
+python imgPrepare.py -n /photos/input /photos/output
+
+# Custom settings
+python imgPrepare.py -m hybrid --crop-min 0.8 --pad-mode black /photos/input /photos/output
+
+# All options
+python imgPrepare.py --help
+```
+
+### CLI Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-m, --mode` | `hybrid-stretch` | Resize mode: pad, crop, hybrid, hybrid-stretch |
+| `-s, --size` | `1920x1080` | Target resolution (WxH) |
+| `--pad-mode` | `average` | Padding color: gray, white, black, average |
+| `--crop-min` | `0.8` | Minimum image retention when cropping (0.0-1.0) |
+| `--stretch-max` | `0.2` | Maximum stretch factor |
+| `--no-stretch-limit` | `0.4` | Aspect deviation limit for stretching |
+| `-t, --text` | off | Overlay filename on image |
+| `--no-skip` | off | Reprocess existing files |
+| `-n, --dry-run` | off | Preview only, no changes |
+| `--flatten` | off | All output to root (vs preserve structure) |
+| `-v, --verbose` | off | Show all files including skipped |
+| `-q, --quiet` | off | Only errors and summary |
+
+## Web UI Usage
+
+Access the preparation UI at `http://raspberrypi:8080/prepare`
+
+The web UI provides:
+- Configuration form for all options
+- Real-time progress bar
+- Process/skip/error counts
+- Cancel button for running jobs
+- Link to filebrowser for uploading images
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/prepare` | GET | Preparation web UI |
+| `/api/prepare/status` | GET | Current job status |
+| `/api/prepare/start` | POST | Start processing (JSON config) |
+| `/api/prepare/cancel` | GET | Cancel running job |
+| `/api/prepare/count?dir=PATH` | GET | Count images in directory |
+| `/api/prepare/defaults` | GET | Default configuration |
+
+### Start Job Example
+
+```bash
+curl -X POST http://raspberrypi:8080/api/prepare/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input_dir": "/home/pi/uploads",
+    "output_dir": "/home/pi/img",
+    "mode": "hybrid-stretch",
+    "target_size": "1920x1080",
+    "skip_existing": true
+  }'
+```
+
+## Workflow
+
+1. **Upload** raw images via filebrowser (`:8081`) to an uploads directory
+2. **Prepare** images via the web UI (`:8080/prepare`) or CLI
+3. **View** prepared images in the slideshow
+
+The preparation step optimizes images for the target display resolution, reducing memory usage during slideshow playback and ensuring consistent aspect ratios.
+
+---
+
 # Development & Testing
 
 The slideshow automatically detects the runtime platform and configures itself appropriately, allowing development and testing on desktop systems (WSL2, Linux, macOS, Windows) without the Raspberry Pi hardware.
