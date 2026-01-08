@@ -28,11 +28,134 @@ import subprocess
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# --- DRIVER FIXES BEFORE PYGAME INIT ---
-os.environ["SDL_VIDEODRIVER"] = "kmsdrm"
-os.environ["SDL_NOMOUSE"] = "1"
-# If HDMI-0 doesn't work, change to card1 later
-os.environ["SDL_DRM_DEVICE"] = "/dev/dri/card0"
+
+# =============================================================================
+# PLATFORM DETECTION
+# =============================================================================
+
+def detect_platform():
+    """
+    Detect the runtime platform to configure appropriate drivers.
+
+    Returns:
+        str: One of 'raspi', 'wsl2', 'linux_desktop', 'macos', 'windows'
+    """
+    import platform
+
+    system = platform.system().lower()
+
+    if system == 'darwin':
+        return 'macos'
+    elif system == 'windows':
+        return 'windows'
+    elif system == 'linux':
+        # Check for WSL2
+        try:
+            with open('/proc/version', 'r') as f:
+                version_info = f.read().lower()
+                if 'microsoft' in version_info or 'wsl' in version_info:
+                    return 'wsl2'
+        except:
+            pass
+
+        # Check for Raspberry Pi
+        try:
+            with open('/proc/device-tree/model', 'r') as f:
+                model = f.read().lower()
+                if 'raspberry pi' in model:
+                    return 'raspi'
+        except:
+            pass
+
+        # Check if we have kmsdrm capability (headless server or direct console)
+        if os.path.exists('/dev/dri/card0'):
+            # Could be raspi-like or a desktop with DRM
+            # Check if we're running in a graphical session
+            if os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):
+                return 'linux_desktop'
+            else:
+                # Running on console, might work with kmsdrm
+                return 'raspi'
+
+        return 'linux_desktop'
+
+    return 'unknown'
+
+
+def configure_video_driver(platform_type):
+    """
+    Configure SDL video driver based on detected platform.
+
+    Args:
+        platform_type: Result from detect_platform()
+
+    Returns:
+        dict: Configuration options for display initialization
+    """
+    config = {
+        'fullscreen': True,
+        'windowed_size': (1280, 720),  # Fallback for windowed mode
+    }
+
+    if platform_type == 'raspi':
+        # Raspberry Pi: use kmsdrm for direct framebuffer access
+        os.environ["SDL_VIDEODRIVER"] = "kmsdrm"
+        os.environ["SDL_NOMOUSE"] = "1"
+        os.environ["SDL_DRM_DEVICE"] = "/dev/dri/card0"
+        config['driver'] = 'kmsdrm'
+        print("Platform: Raspberry Pi - using kmsdrm driver")
+
+    elif platform_type == 'wsl2':
+        # WSL2: use x11 (requires X server like VcXsrv or WSLg)
+        # WSLg provides built-in Wayland/X11 support in Windows 11
+        if os.environ.get('WAYLAND_DISPLAY'):
+            os.environ["SDL_VIDEODRIVER"] = "wayland"
+            config['driver'] = 'wayland'
+            print("Platform: WSL2 - using Wayland driver (WSLg)")
+        else:
+            os.environ["SDL_VIDEODRIVER"] = "x11"
+            config['driver'] = 'x11'
+            print("Platform: WSL2 - using X11 driver")
+        # In WSL2, we might want windowed mode for easier testing
+        config['fullscreen'] = False
+
+    elif platform_type == 'linux_desktop':
+        # Linux desktop: prefer Wayland, fallback to X11
+        if os.environ.get('WAYLAND_DISPLAY'):
+            os.environ["SDL_VIDEODRIVER"] = "wayland"
+            config['driver'] = 'wayland'
+            print("Platform: Linux desktop - using Wayland driver")
+        else:
+            os.environ["SDL_VIDEODRIVER"] = "x11"
+            config['driver'] = 'x11'
+            print("Platform: Linux desktop - using X11 driver")
+        config['fullscreen'] = False
+
+    elif platform_type == 'macos':
+        # macOS: use cocoa (default)
+        os.environ["SDL_VIDEODRIVER"] = "cocoa"
+        config['driver'] = 'cocoa'
+        config['fullscreen'] = False
+        print("Platform: macOS - using Cocoa driver")
+
+    elif platform_type == 'windows':
+        # Windows: use windows driver (default)
+        os.environ["SDL_VIDEODRIVER"] = "windows"
+        config['driver'] = 'windows'
+        config['fullscreen'] = False
+        print("Platform: Windows - using Windows driver")
+
+    else:
+        # Unknown: let SDL choose
+        print(f"Platform: Unknown ({platform_type}) - using SDL default driver")
+        config['fullscreen'] = False
+
+    return config
+
+
+# Detect platform and configure video driver BEFORE pygame import side effects
+PLATFORM = detect_platform()
+VIDEO_CONFIG = configure_video_driver(PLATFORM)
 
 
 # =============================================================================
@@ -1206,16 +1329,28 @@ class Slideshow:
         # Initialize pygame display
         pygame.display.init()
         pygame.init()
-        pygame.mouse.set_visible(False)
 
         info = pygame.display.Info()
         print(f"Driver: {pygame.display.get_driver()}")
         print(f"Detected resolution: {info.current_w}x{info.current_h}")
 
-        self.screen = pygame.display.set_mode(
-            (info.current_w, info.current_h),
-            pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE
-        )
+        # Use platform-specific display configuration
+        if VIDEO_CONFIG.get('fullscreen', True):
+            # Fullscreen mode for Raspberry Pi
+            pygame.mouse.set_visible(False)
+            self.screen = pygame.display.set_mode(
+                (info.current_w, info.current_h),
+                pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE
+            )
+        else:
+            # Windowed mode for desktop/WSL2 testing
+            width, height = VIDEO_CONFIG.get('windowed_size', (1280, 720))
+            pygame.display.set_caption("Slideshow - Press Q to quit, Space to pause")
+            self.screen = pygame.display.set_mode(
+                (width, height),
+                pygame.DOUBLEBUF | pygame.RESIZABLE
+            )
+            print(f"Running in windowed mode: {width}x{height}")
 
         self.width, self.height = self.screen.get_size()
         self.clock = pygame.time.Clock()
@@ -1303,15 +1438,59 @@ class Slideshow:
             self._skip_requested = True
             print("Skipping to next image")
 
+    def _handle_pygame_events(self):
+        """Process pygame events (keyboard, window close, resize)."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
+                    self.running = False
+                elif event.key == pygame.K_SPACE:
+                    if self.paused:
+                        self.resume()
+                    else:
+                        self.pause()
+                elif event.key == pygame.K_RIGHT or event.key == pygame.K_n:
+                    self.skip()
+                elif event.key == pygame.K_UP:
+                    self.set_duration(self.display_duration + 5)
+                elif event.key == pygame.K_DOWN:
+                    self.set_duration(self.display_duration - 5)
+                elif event.key == pygame.K_f:
+                    # Toggle fullscreen in desktop mode
+                    if not VIDEO_CONFIG.get('fullscreen', True):
+                        pygame.display.toggle_fullscreen()
+            elif event.type == pygame.VIDEORESIZE:
+                # Handle window resize
+                self.width, self.height = event.w, event.h
+                self.screen = pygame.display.set_mode(
+                    (self.width, self.height),
+                    pygame.DOUBLEBUF | pygame.RESIZABLE
+                )
+                self.fade_surface = pygame.Surface((self.width, self.height)).convert()
+                self.fade_surface.fill((0, 0, 0))
+                # Rescale current image if we have one
+                if self.current_img:
+                    self.current_img = pygame.transform.scale(
+                        self.current_img, (self.width, self.height)
+                    ).convert()
+                    self.screen.blit(self.current_img, (0, 0))
+                    pygame.display.flip()
+
     def run(self):
         while self.running:
+            # Process pygame events (essential for desktop mode)
+            self._handle_pygame_events()
+
             if self.paused:
-                time.sleep(0.5)
+                time.sleep(0.1)
                 continue
 
             if not self.playlist:
                 self.playlist = self.get_images()
                 if not self.playlist:
+                    print("No images found, waiting...")
                     time.sleep(5)
                     continue
                 random.shuffle(self.playlist)
@@ -1337,24 +1516,61 @@ class Slideshow:
             self._skip_requested = False
             elapsed = 0
             while elapsed < self.display_duration and self.running and not self._skip_requested:
+                self._handle_pygame_events()  # Keep processing events during display
                 if self.paused:
-                    time.sleep(0.5)
+                    time.sleep(0.1)
                     continue
-                time.sleep(0.5)
-                elapsed += 0.5
+                time.sleep(0.1)
+                elapsed += 0.1
 
 
 # =============================================================================
 # MAIN
 # =============================================================================
 
+def parse_args():
+    """Parse command line arguments for testing/development."""
+    import argparse
+    parser = argparse.ArgumentParser(description='Photo Slideshow')
+    parser.add_argument('--image-dir', '-i', type=str,
+                        help='Override image directory')
+    parser.add_argument('--config', '-c', type=str,
+                        help='Path to config file')
+    parser.add_argument('--duration', '-d', type=int,
+                        help='Override display duration (seconds)')
+    parser.add_argument('--fullscreen', '-f', action='store_true',
+                        help='Force fullscreen mode')
+    parser.add_argument('--windowed', '-w', action='store_true',
+                        help='Force windowed mode')
+    parser.add_argument('--size', '-s', type=str, default='1280x720',
+                        help='Window size for windowed mode (WIDTHxHEIGHT)')
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
+    # Override VIDEO_CONFIG based on command line args
+    global VIDEO_CONFIG
+    if args.fullscreen:
+        VIDEO_CONFIG['fullscreen'] = True
+    elif args.windowed:
+        VIDEO_CONFIG['fullscreen'] = False
+    if args.size:
+        try:
+            w, h = args.size.split('x')
+            VIDEO_CONFIG['windowed_size'] = (int(w), int(h))
+        except:
+            pass
+
     # Load config from multiple possible locations
     config_paths = [
+        args.config,  # Command line override first
         "/home/pi/slideshow/config.json",
         "/home/pi/config.json",
         os.path.join(os.path.dirname(__file__), "config.json")
     ]
+    config_paths = [p for p in config_paths if p]  # Remove None
 
     config = None
     for path in config_paths:
@@ -1366,6 +1582,14 @@ def main():
     if config is None:
         config = load_config("/nonexistent")  # Will use defaults
         print("Using default configuration")
+
+    # Apply command line overrides
+    if args.image_dir:
+        config['image_dir'] = args.image_dir
+        print(f"Image directory overridden to: {args.image_dir}")
+    if args.duration:
+        config['display_duration'] = args.duration
+        print(f"Display duration overridden to: {args.duration}s")
 
     # Create slideshow
     app = Slideshow(config)

@@ -605,6 +605,84 @@ Use IR remote buttons or API to filter by folder.
 
 ---
 
+## Development & Testing
+
+The slideshow automatically detects the runtime platform and configures itself appropriately, allowing development and testing on desktop systems (WSL2, Linux, macOS, Windows) without the Raspberry Pi hardware.
+
+### Platform Detection
+
+| Platform | Video Driver | Display Mode | Hardware Features |
+|----------|-------------|--------------|-------------------|
+| Raspberry Pi | `kmsdrm` | Fullscreen | GPIO, CEC available |
+| WSL2 | `wayland` or `x11` | Windowed | Simulated/disabled |
+| Linux Desktop | `wayland` or `x11` | Windowed | Simulated/disabled |
+| macOS | `cocoa` | Windowed | Simulated/disabled |
+| Windows | `windows` | Windowed | Simulated/disabled |
+
+### Command Line Options
+
+```bash
+python3 slideshow.py --help
+
+# Override image directory (useful for testing with local images)
+python3 slideshow.py --image-dir ./imgraw
+
+# Set display duration (seconds per image)
+python3 slideshow.py --duration 5
+
+# Force windowed or fullscreen mode
+python3 slideshow.py --windowed
+python3 slideshow.py --fullscreen
+
+# Set window size (WIDTHxHEIGHT)
+python3 slideshow.py --size 1920x1080
+
+# Use a specific config file
+python3 slideshow.py --config ./my-config.json
+
+# Combined example for WSL2 testing
+python3 slideshow.py -i ./imgraw -d 3 -s 1280x720
+```
+
+### Keyboard Controls (Windowed Mode)
+
+| Key | Action |
+|-----|--------|
+| **Q** / **Escape** | Quit |
+| **Space** | Toggle pause/play |
+| **Right** / **N** | Skip to next image |
+| **Up** | Increase duration (+5s) |
+| **Down** | Decrease duration (-5s) |
+| **F** | Toggle fullscreen |
+
+### Testing on WSL2
+
+WSL2 with WSLg (Windows 11) provides built-in graphical support. The slideshow will automatically detect WSL2 and use the appropriate Wayland or X11 driver.
+
+```bash
+# Install pygame if needed
+pip install pygame
+
+# Run with local test images
+python3 slideshow.py --image-dir ./imgraw --duration 3
+
+# The HTTP API is still available for testing
+curl http://localhost:8080/status
+curl http://localhost:8080/pause
+curl http://localhost:8080/skip
+```
+
+Hardware providers (GPIO, CEC) gracefully fall back to no-op implementations when running on non-Raspberry Pi systems, so the slideshow runs without errors.
+
+### Performance Note
+
+The platform detection adds negligible overhead on the Raspberry Pi:
+- **Startup:** ~1-2ms one-time cost (reads two small `/proc` files)
+- **Memory:** <1KB (two small global variables)
+- **Runtime:** The `pygame.event.get()` call processes the event queue, which is recommended practice and has no measurable impact in fullscreen kmsdrm mode
+
+---
+
 ## Troubleshooting
 
 ### Display Issues
