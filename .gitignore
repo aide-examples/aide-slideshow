@@ -1,3 +1,5 @@
 filebrowser
 img/*
 img_raw/*
+img_upload/*
+__pycache__/
