@@ -4,7 +4,11 @@ A modular fullscreen photo slideshow with a plugin architecture for different ha
 
 Designed to run on a dedicated device connected to a wall mounted display as a digital photo frame.
 
-## Platform Choice
+---
+
+# Platform
+
+## Target Device Selection
 
 We are looking for a cheap platform which can store a lot of images and display them via HDMI.
 It must be strong enough to host a small web server, so that we conveniently can upload images
@@ -28,14 +32,55 @@ pygame and a suitable driver (vc4-kms-v3d). If we are carefully setting the limi
 we will have sufficient memory for the python process - which must not only read images but shall
 also handle a Web API and optionally be able to take commands from a classical infrared remote control.
 
-As is often the case with developing systems for tiny target hardware we aim at being able to test the application within the development environment (windows/wsl ubuntu). Therefore we added hardware detection and bypassing for the raspi-specific libraries. Hardware sensors are replaced by stubs.
+As is often the case with developing systems for tiny target hardware we aim at being able to test the 
+application within the development environment (windows/wsl ubuntu). Therefore we added hardware
+detection and bypassing for the raspi-specific libraries. Hardware sensors are replaced by stubs.
 
-Because this application is part of the *[aide-examples](https://github.com/aide-examples)* we also want to offer easy access to the current document. So we included an "about.html" which allows viewing markdown files and mermaid diagrams on the web client of the application.
+Because this application is part of the *[aide-examples](https://github.com/aide-examples)* we also 
+want to offer easy access to the current document. So we included an "about.html" which allows viewing
+markdown files and mermaid diagrams on the web client of the application.
 
 
-## Requirements
+## Task Assignment
 
-This is a maximal list of potential features. Those marked with an asterisk are already implented.
+We see the following tasks and plan to assign them to the platforms as follows
+
+- sliding the images, controlling HDMI
+  - Python script on RPI ZWH in production
+  - WSL/Ubuntu in development
+
+- UI to control the slider
+  - Python script serves tiny index.html on port 8080 with embedded css and js
+  - Web client browser on user's platform (desktop, tablet, mobile) handles the UI
+
+- display information on architecture of the system
+  - Python script serves "about.html" and README.md
+  - Web client browser on user's platform handles UI, fetches README and renders markdown
+
+- administration of images
+  - we install a separate executable on the target hardware ("filebrowser")
+    which comes with its own http server (port 8081)
+  - during development we use the native explorer of the IDE platform
+  - the control UI (port 8080) contains a href to the filebrowser UI (port 8081)
+
+- searching images, taking photos
+  - done by the user on a platform of his choice
+  - maybe we can provide an AI assistant which identifies and collect suitable material?
+  - upload via the filebrowser wen frontend
+
+- preparation of images for efficient display
+  - this could be a separate application running on the user's machine before uploading;
+    maybe it is another python script which we provide
+  - or it could be integrated into the sliding app after uploading if memory restrictions
+    and CPU power allow; this solution would avoid the need to have a python environment
+    on the user's machine
+  - technically the preparation may include the user of tools like image-magick or ffmpeg
+  
+---
+
+# Requirements
+
+This is a long list of potential features. Those marked with an asterisk are already implented.
 
 - show images
   - in random order (*)
@@ -85,10 +130,11 @@ This is a maximal list of potential features. Those marked with an asterisk are 
   - architectural documentation in README.md (*)
   - being able to show this documentation when t7he app is running (*)
 
+---
 
-## Architecture Overview
+# Architecture Overview (Python Source)
 
-The application is built around three main concerns, each with multiple implementation options (providers):
+The script is built around three main concerns, each with multiple implementation options (providers):
 
 | Concern | Problem | Providers |
 |---------|---------|-----------|
@@ -492,9 +538,9 @@ Physical IR remote control.
 
 ---
 
-## Installation
+# Installation
 
-### 1. System Dependencies
+## 1. System Dependencies
 
 ```bash
 sudo apt update
@@ -507,7 +553,7 @@ sudo apt install cec-utils
 sudo apt install ir-keytable
 ```
 
-### 2. Python Dependencies (Optional)
+## 2. Python Dependencies (Optional)
 
 ```bash
 # For Samsung WebSocket control
@@ -517,7 +563,7 @@ pip install samsungtvws
 pip install paho-mqtt
 ```
 
-### 3. Deploy Files
+## 3. Deploy Files
 
 ```bash
 # Clone the repository or copy files
@@ -534,11 +580,11 @@ mkdir -p /home/pi/img
 
 The `static/` directory contains the web UI and is required for HTTP control. The `sample_images/` directory provides demo images so the slideshow works immediately - you can remove it once you add your own photos to `/home/pi/img`.
 
-### 4. Configure
+## 4. Configure
 
 Edit `/home/pi/slideshow/config.json` to match your hardware setup.
 
-### 5. Install Systemd Service
+## 5. Install Systemd Service
 
 ```bash
 sudo cp slideshow.service /etc/systemd/system/
@@ -549,9 +595,9 @@ sudo systemctl start slideshow
 
 ---
 
-## Configuration Reference
+# Configuration Reference
 
-### Full Example
+## Full Example
 
 ```json
 {
@@ -586,7 +632,7 @@ sudo systemctl start slideshow
 }
 ```
 
-### Core Settings
+## Core Settings
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -596,7 +642,7 @@ sudo systemctl start slideshow
 
 ---
 
-## Image Organization
+# Image Organization
 
 Organize images in subfolders for filtering:
 
@@ -615,11 +661,11 @@ Use IR remote buttons or API to filter by folder.
 
 ---
 
-## Development & Testing
+# Development & Testing
 
 The slideshow automatically detects the runtime platform and configures itself appropriately, allowing development and testing on desktop systems (WSL2, Linux, macOS, Windows) without the Raspberry Pi hardware.
 
-### Platform Detection
+## Platform Detection
 
 | Platform | Video Driver | Display Mode | Hardware Features |
 |----------|-------------|--------------|-------------------|
@@ -629,7 +675,7 @@ The slideshow automatically detects the runtime platform and configures itself a
 | macOS | `cocoa` | Windowed | Simulated/disabled |
 | Windows | `windows` | Windowed | Simulated/disabled |
 
-### Command Line Options
+## Command Line Options
 
 ```bash
 python3 slideshow.py --help
@@ -654,7 +700,7 @@ python3 slideshow.py --config ./my-config.json
 python3 slideshow.py -i ./imgraw -d 3 -s 1280x720
 ```
 
-### Keyboard Controls (Windowed Mode)
+## Keyboard Controls (Windowed Mode)
 
 | Key | Action |
 |-----|--------|
@@ -665,7 +711,7 @@ python3 slideshow.py -i ./imgraw -d 3 -s 1280x720
 | **Down** | Decrease duration (-5s) |
 | **F** | Toggle fullscreen |
 
-### Testing on WSL2
+## Testing on WSL2
 
 WSL2 with WSLg (Windows 11) provides built-in graphical support. The slideshow will automatically detect WSL2 and use the appropriate Wayland or X11 driver.
 
@@ -682,9 +728,9 @@ curl http://localhost:8080/pause
 curl http://localhost:8080/skip
 ```
 
-Hardware providers (GPIO, CEC) gracefully fall back to no-op implementations when running on non-Raspberry Pi systems, so the slideshow runs without errors.
+Hardware providers (GPIO, CEC) gracefully fall back to no-op implementations when running on non-Raspberry Pi systems, so the slideshow runs without errors. On startup, the server prints its reachable URL (FQDN or IP address) to the console.
 
-### Sample Images
+## Sample Images
 
 The repository includes sample images in `sample_images/` so the slideshow works immediately after cloning without any configuration. When the configured `image_dir` is empty or doesn't exist, the slideshow automatically falls back to these bundled images.
 
@@ -710,9 +756,9 @@ The platform detection adds negligible overhead on the Raspberry Pi:
 
 ---
 
-## Troubleshooting
+# Troubleshooting
 
-### Display Issues
+## Display Issues
 
 **Black screen:**
 ```bash
@@ -720,7 +766,7 @@ ls /dev/dri/  # Check available GPU devices
 # Try card1 in slideshow.py if card0 doesn't work
 ```
 
-### Permission Issues
+## Permission Issues
 
 ```bash
 # For IR remote
@@ -730,7 +776,7 @@ sudo usermod -aG input pi
 sudo usermod -aG gpio pi
 ```
 
-### Service Issues
+## Service Issues
 
 ```bash
 sudo systemctl status slideshow
@@ -740,7 +786,7 @@ sudo systemctl restart slideshow
 
 ---
 
-## Extending
+# Extending
 
 To add a new provider:
 
@@ -757,6 +803,6 @@ To add a new provider:
 
 ---
 
-## License
+# License
 
 MIT License

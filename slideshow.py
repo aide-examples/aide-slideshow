@@ -1083,12 +1083,34 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         self._server = None
         self._thread = None
 
+    def _get_server_url(self):
+        """Get the best URL to reach this server."""
+        import socket
+        hostname = socket.gethostname()
+        try:
+            # Try to get FQDN (fully qualified domain name)
+            fqdn = socket.getfqdn()
+            if fqdn and fqdn != hostname and '.' in fqdn:
+                return f"http://{fqdn}:{self.port}"
+        except:
+            pass
+        try:
+            # Fall back to IP address
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return f"http://{ip}:{self.port}"
+        except:
+            pass
+        return f"http://{hostname}:{self.port}"
+
     def start(self):
         handler = self._create_handler()
         self._server = HTTPServer(('0.0.0.0', self.port), handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
-        print(f"HTTP API server running on port {self.port}")
+        print(f"HTTP API server running at {self._get_server_url()}")
 
     def stop(self):
         if self._server:

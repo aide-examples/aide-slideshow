@@ -10,6 +10,8 @@ SupplementaryGroups=video render input
 WorkingDirectory=/home/pi
 ExecStart=/usr/bin/python3 /home/pi/slideshow.py
 Restart=always
+KillSignal=SIGTERM
+TimeoutStopSec=2s
 
 # use tty1 exclusively for our graohics
 StandardInput=tty-force
@@ -18,7 +20,6 @@ StandardError=inherit
 TTYPath=/dev/tty1
 # prevent the system from switching off the screeen or showing the cursor
 ExecStartPre=/usr/bin/setterm -cursor off -blank 0 -powersave off > /dev/tty1
-# ExecStart=/home/pi/slideshow/venv/bin/python3 /home/pi/slideshow/slideshow.py
 
 # graphics drivers / devices used (taken from "-E" python interactive script output)
 Environment=SDL_VIDEODRIVER=kmsdrm
@@ -27,3 +28,5 @@ Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
+
+
