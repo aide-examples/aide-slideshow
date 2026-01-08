@@ -1019,6 +1019,47 @@ class RemoteControlProvider(ABC):
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(SCRIPT_DIR, "static")
 
+
+class PathSecurityError(ValueError):
+    """Raised when a path contains unsafe traversal sequences."""
+    pass
+
+
+def resolve_safe_path(path_str: str, base_dir: str = None) -> str:
+    """
+    Resolve a path safely, rejecting path traversal attempts.
+
+    Args:
+        path_str: Path from config (relative or absolute)
+        base_dir: Base directory for relative paths (defaults to SCRIPT_DIR)
+
+    Returns:
+        Absolute path string
+
+    Raises:
+        PathSecurityError: If path contains '..' traversal sequences
+    """
+    if base_dir is None:
+        base_dir = SCRIPT_DIR
+
+    # Block path traversal sequences
+    if '..' in path_str:
+        raise PathSecurityError(f"Path traversal '..' not allowed in path: {path_str}")
+
+    # Resolve relative paths against base_dir
+    if os.path.isabs(path_str):
+        resolved = os.path.normpath(path_str)
+    else:
+        resolved = os.path.normpath(os.path.join(base_dir, path_str))
+
+    # Double-check the resolved path doesn't escape (belt and suspenders)
+    # This catches edge cases like paths with encoded sequences
+    if '..' in resolved:
+        raise PathSecurityError(f"Resolved path contains traversal: {resolved}")
+
+    return resolved
+
+
 # MIME types for static file serving
 MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -1356,7 +1397,12 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
 
                 elif path == '/api/prepare/count':
                     # Count images in a directory (for preview)
-                    directory = params.get('dir', [controller.slideshow.image_dir])[0]
+                    dir_param = params.get('dir', [controller.slideshow.image_dir])[0]
+                    try:
+                        directory = resolve_safe_path(dir_param)
+                    except PathSecurityError as e:
+                        self.send_json({"error": str(e)}, 400)
+                        return
                     module = get_imgPrepare()
                     if module:
                         from pathlib import Path
@@ -1368,7 +1414,7 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                 elif path == '/api/prepare/defaults':
                     # Return default configuration and paths
                     self.send_json({
-                        "input_dir": controller.slideshow.image_dir,
+                        "input_dir": controller.slideshow.upload_dir,
                         "output_dir": controller.slideshow.image_dir,
                         "mode": "hybrid-stretch",
                         "target_size": "1920x1080",
@@ -1423,6 +1469,17 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                     # Parse configuration from POST data
                     from pathlib import Path as PathLib
                     try:
+                        # Validate and resolve paths safely
+                        input_dir_str = data.get('input_dir', controller.slideshow.upload_dir)
+                        output_dir_str = data.get('output_dir', controller.slideshow.image_dir)
+
+                        try:
+                            input_dir = resolve_safe_path(input_dir_str)
+                            output_dir = resolve_safe_path(output_dir_str)
+                        except PathSecurityError as e:
+                            self.send_json({"error": str(e)}, 400)
+                            return
+
                         # Parse target size
                         size_str = data.get('target_size', '1920x1080')
                         if isinstance(size_str, str):
@@ -1432,16 +1489,16 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                             target_size = tuple(size_str)
 
                         config = module.PrepareConfig(
-                            input_dir=PathLib(data.get('input_dir', controller.slideshow.image_dir)),
-                            output_dir=PathLib(data.get('output_dir', controller.slideshow.image_dir)),
+                            input_dir=PathLib(input_dir),
+                            output_dir=PathLib(output_dir),
                             mode=data.get('mode', 'hybrid-stretch'),
                             target_size=target_size,
                             pad_mode=data.get('pad_mode', 'average'),
                             crop_min=float(data.get('crop_min', 0.8)),
                             stretch_max=float(data.get('stretch_max', 0.2)),
                             no_stretch_limit=float(data.get('no_stretch_limit', 0.4)),
-                            show_text=bool(data.get('show_text', False)),
-                            skip_existing=bool(data.get('skip_existing', True)),
+                            show_text=bool(data.get('show_text', True)),
+                            skip_existing=bool(data.get('skip_existing', False)),
                             dry_run=bool(data.get('dry_run', False)),
                             flatten=bool(data.get('flatten', False)),
                             quiet=True,  # Don't spam console from web jobs
@@ -1608,7 +1665,11 @@ class Slideshow:
         self.paused = False
         self.display_duration = config["display_duration"]
         self.fade_steps = config["fade_steps"]
-        self.image_dir = config["image_dir"]
+
+        # Resolve paths safely (supports both relative and absolute, blocks '..')
+        self.image_dir = resolve_safe_path(config["image_dir"])
+        default_upload = "img_upload"  # Relative default
+        self.upload_dir = resolve_safe_path(config.get("upload_dir", default_upload))
         self.current_filter = None
 
         # Initialize monitor control

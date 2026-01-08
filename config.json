@@ -1,5 +1,6 @@
 {
-    "image_dir": "/home/pi/img",
+    "image_dir": "img",
+    "upload_dir": "img_upload",
     "display_duration": 35,
     "fade_steps": 5,
 

@@ -594,12 +594,12 @@ cp README.md /home/pi/slideshow/
 cp -r static /home/pi/slideshow/
 cp -r sample_images /home/pi/slideshow/
 
-# Create image directories
-mkdir -p /home/pi/img      # For prepared/displayed images
-mkdir -p /home/pi/uploads  # Optional: for raw uploads before preparation
+# Create image directories (relative to slideshow directory)
+mkdir -p /home/pi/slideshow/img         # For prepared/displayed images
+mkdir -p /home/pi/slideshow/img_upload  # For raw uploads before preparation
 ```
 
-The `static/` directory contains the web UI and is required for HTTP control. The `sample_images/` directory provides demo images so the slideshow works immediately - you can remove it once you add your own photos to `/home/pi/img`.
+The `static/` directory contains the web UI and is required for HTTP control. The `sample_images/` directory provides demo images so the slideshow works immediately - you can remove it once you add your own photos to the `img/` directory.
 
 ## 4. Configure
 
@@ -622,7 +622,8 @@ sudo systemctl start slideshow
 
 ```json
 {
-    "image_dir": "/home/pi/img",
+    "image_dir": "img",
+    "upload_dir": "img_upload",
     "display_duration": 35,
     "fade_steps": 5,
 
@@ -657,9 +658,15 @@ sudo systemctl start slideshow
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `image_dir` | Path to images (scanned recursively) | `/home/pi/img` |
+| `image_dir` | Path to images (scanned recursively) | `img` |
+| `upload_dir` | Path for raw uploads (input for image preparation) | `img_upload` |
 | `display_duration` | Seconds per image | 35 |
 | `fade_steps` | Transition smoothness (1-30) | 5 |
+
+**Path Security:**
+- Paths can be relative (resolved against script directory) or absolute
+- Path traversal (`..`) is blocked for security
+- Relative paths are recommended for portability
 
 ---
 
