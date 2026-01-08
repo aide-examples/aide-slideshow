@@ -163,7 +163,8 @@ VIDEO_CONFIG = configure_video_driver(PLATFORM)
 # =============================================================================
 
 DEFAULT_CONFIG = {
-    "image_dir": "/home/pi/img",
+    "image_dir": "img/show",
+    "upload_dir": "img/upload",
     "display_duration": 35,
     "fade_steps": 5,
     "api_port": 8080,
@@ -1668,7 +1669,7 @@ class Slideshow:
 
         # Resolve paths safely (supports both relative and absolute, blocks '..')
         self.image_dir = resolve_safe_path(config["image_dir"])
-        default_upload = "img_upload"  # Relative default
+        default_upload = "img/upload"  # Relative default
         self.upload_dir = resolve_safe_path(config.get("upload_dir", default_upload))
         self.current_filter = None
 

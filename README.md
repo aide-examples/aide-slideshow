@@ -595,8 +595,8 @@ cp -r static /home/pi/slideshow/
 cp -r sample_images /home/pi/slideshow/
 
 # Create image directories (relative to slideshow directory)
-mkdir -p /home/pi/slideshow/img         # For prepared/displayed images
-mkdir -p /home/pi/slideshow/img_upload  # For raw uploads before preparation
+mkdir -p /home/pi/slideshow/img/show         # For prepared/displayed images
+mkdir -p /home/pi/slideshow/img/upload       # For raw uploads before preparation
 ```
 
 The `static/` directory contains the web UI and is required for HTTP control. The `sample_images/` directory provides demo images so the slideshow works immediately - you can remove it once you add your own photos to the `img/` directory.
@@ -622,8 +622,8 @@ sudo systemctl start slideshow
 
 ```json
 {
-    "image_dir": "img",
-    "upload_dir": "img_upload",
+    "image_dir": "img/show",
+    "upload_dir": "img/upload",
     "display_duration": 35,
     "fade_steps": 5,
 
@@ -658,8 +658,8 @@ sudo systemctl start slideshow
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `image_dir` | Path to images (scanned recursively) | `img` |
-| `upload_dir` | Path for raw uploads (input for image preparation) | `img_upload` |
+| `image_dir` | Path to images (scanned recursively) | `img/show` |
+| `upload_dir` | Path for raw uploads (input for image preparation) | `img/upload` |
 | `display_duration` | Seconds per image | 35 |
 | `fade_steps` | Transition smoothness (1-30) | 5 |
 
@@ -675,7 +675,7 @@ sudo systemctl start slideshow
 Organize images in subfolders for filtering:
 
 ```
-/home/pi/img/
+/home/pi/img/show
 ├── vacation/
 │   ├── beach_2024/
 │   └── mountains/
@@ -691,7 +691,8 @@ Use IR remote buttons or API to filter by folder.
 
 # Image Preparation
 
-The `imgPrepare.py` module resizes and optimizes images for display on digital photo frames. It can be used as a standalone CLI tool or integrated into the slideshow via the web UI.
+The `imgPrepare.py` module resizes and optimizes images for display on digital photo frames.
+It is integrated into the slideshow via the web UI.
 
 ## System Architecture
 
@@ -748,38 +749,22 @@ flowchart TB
 | **During processing** | ~36MB per large image (4000x3000), released after each image |
 | **GC Strategy** | Explicit `img.close()` + `del` + periodic `gc.collect()` |
 
-## CLI Usage
-
-```bash
-# Basic usage with defaults (hybrid-stretch, 1920x1080, average padding)
-python imgPrepare.py /photos/input /photos/output
-
-# Dry run - preview what would happen
-python imgPrepare.py -n /photos/input /photos/output
-
-# Custom settings
-python imgPrepare.py -m hybrid --crop-min 0.8 --pad-mode black /photos/input /photos/output
-
-# All options
-python imgPrepare.py --help
-```
-
-### CLI Options
+### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `-m, --mode` | `hybrid-stretch` | Resize mode: pad, crop, hybrid, hybrid-stretch |
-| `-s, --size` | `1920x1080` | Target resolution (WxH) |
-| `--pad-mode` | `average` | Padding color: gray, white, black, average |
-| `--crop-min` | `0.8` | Minimum image retention when cropping (0.0-1.0) |
-| `--stretch-max` | `0.2` | Maximum stretch factor |
-| `--no-stretch-limit` | `0.4` | Aspect deviation limit for stretching |
-| `-t, --text` | off | Overlay filename on image |
-| `--no-skip` | off | Reprocess existing files |
-| `-n, --dry-run` | off | Preview only, no changes |
-| `--flatten` | off | All output to root (vs preserve structure) |
-| `-v, --verbose` | off | Show all files including skipped |
-| `-q, --quiet` | off | Only errors and summary |
+| `mode` | `hybrid-stretch` | Resize mode: pad, crop, hybrid, hybrid-stretch |
+| `size` | `1920x1080` | Target resolution (WxH) |
+| `pad-mode` | `average` | Padding color: gray, white, black, average |
+| `crop-min` | `0.8` | Minimum image retention when cropping (0.0-1.0) |
+| `stretch-max` | `0.2` | Maximum stretch factor |
+| `no-stretch-limit` | `0.4` | Aspect deviation limit for stretching |
+| `text` | off | Overlay filename on image |
+| `no-skip` | off | Reprocess existing files |
+| `dry-run` | off | Preview only, no changes |
+| `flatten` | off | All output to root (vs preserve structure) |
+| `verbose` | off | Show all files including skipped |
+| `quiet` | off | Only errors and summary |
 
 ## Web UI Usage
 
@@ -809,8 +794,8 @@ The web UI provides:
 curl -X POST http://raspberrypi:8080/api/prepare/start \
   -H "Content-Type: application/json" \
   -d '{
-    "input_dir": "/home/pi/uploads",
-    "output_dir": "/home/pi/img",
+    "input_dir": "/home/pi/img/upload",
+    "output_dir": "/home/pi/img/show",
     "mode": "hybrid-stretch",
     "target_size": "1920x1080",
     "skip_existing": true
@@ -819,8 +804,8 @@ curl -X POST http://raspberrypi:8080/api/prepare/start \
 
 ## Workflow
 
-1. **Upload** raw images via filebrowser (`:8081`) to an uploads directory
-2. **Prepare** images via the web UI (`:8080/prepare`) or CLI
+1. **Upload** raw images via filebrowser (`:8081`) to the uploads directory
+2. **Prepare** images via the web UI (`:8080/prepare`)
 3. **View** prepared images in the slideshow
 
 The preparation step optimizes images for the target display resolution, reducing memory usage during slideshow playback and ensuring consistent aspect ratios.
@@ -847,7 +832,7 @@ The slideshow automatically detects the runtime platform and configures itself a
 python3 slideshow.py --help
 
 # Override image directory (useful for testing with local images)
-python3 slideshow.py --image-dir ./imgraw
+python3 slideshow.py --image-dir myImages
 
 # Set display duration (seconds per image)
 python3 slideshow.py --duration 5
@@ -863,7 +848,7 @@ python3 slideshow.py --size 1920x1080
 python3 slideshow.py --config ./my-config.json
 
 # Combined example for WSL2 testing
-python3 slideshow.py -i ./imgraw -d 3 -s 1280x720
+python3 slideshow.py -i myImages -d 3 -s 1280x720
 ```
 
 ## Keyboard Controls (Windowed Mode)
@@ -886,7 +871,7 @@ WSL2 with WSLg (Windows 11) provides built-in graphical support. The slideshow w
 pip install pygame
 
 # Run with local test images
-python3 slideshow.py --image-dir ./imgraw --duration 3
+python3 slideshow.py --image-dir myImages --duration 3
 
 # The HTTP API is still available for testing
 curl http://localhost:8080/status

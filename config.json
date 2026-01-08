@@ -1,6 +1,6 @@
 {
-    "image_dir": "img",
-    "upload_dir": "img_upload",
+    "image_dir": "img/show",
+    "upload_dir": "img/upload",
     "display_duration": 35,
     "fade_steps": 5,
 
