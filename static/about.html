@@ -149,6 +149,74 @@
         .markdown-body strong {
             color: #fff;
         }
+        /* Table of Contents */
+        .toc-container {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            margin-bottom: 25px;
+            overflow: hidden;
+        }
+        .toc-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 15px;
+            cursor: pointer;
+            background: rgba(233, 69, 96, 0.1);
+            user-select: none;
+        }
+        .toc-header:hover {
+            background: rgba(233, 69, 96, 0.2);
+        }
+        .toc-header h3 {
+            color: #e94560;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+        .toc-toggle {
+            color: #e94560;
+            font-size: 1.2rem;
+            transition: transform 0.2s;
+        }
+        .toc-container.collapsed .toc-toggle {
+            transform: rotate(-90deg);
+        }
+        .toc-content {
+            padding: 10px 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            transition: max-height 0.3s ease, padding 0.3s ease;
+        }
+        .toc-container.collapsed .toc-content {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            overflow: hidden;
+        }
+        .toc-content ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .toc-content li {
+            margin: 4px 0;
+        }
+        .toc-content a {
+            color: #a0a0a0;
+            text-decoration: none;
+            font-size: 0.85rem;
+            display: block;
+            padding: 3px 0;
+            transition: color 0.2s;
+        }
+        .toc-content a:hover {
+            color: #e94560;
+        }
+        .toc-content .toc-h1 { padding-left: 0; font-weight: 600; color: #e0e0e0; }
+        .toc-content .toc-h2 { padding-left: 12px; }
+        .toc-content .toc-h3 { padding-left: 24px; font-size: 0.8rem; }
+        .toc-content .toc-h4 { padding-left: 36px; font-size: 0.75rem; }
         /* Mermaid diagram container */
         .mermaid {
             background: rgba(255,255,255,0.95);
@@ -212,6 +280,48 @@
             breaks: false
         });
 
+        // Generate Table of Contents from headings
+        function generateTOC(container) {
+            const headings = container.querySelectorAll('h1, h2, h3, h4');
+            if (headings.length === 0) return null;
+
+            // Add IDs to headings and build TOC
+            const tocItems = [];
+            headings.forEach((heading, index) => {
+                // Generate slug from heading text
+                const text = heading.textContent;
+                const slug = text.toLowerCase()
+                    .replace(/[^\w\s-]/g, '')
+                    .replace(/\s+/g, '-')
+                    .replace(/-+/g, '-');
+                const id = slug + '-' + index;
+                heading.id = id;
+
+                const level = heading.tagName.toLowerCase();
+                tocItems.push({ text, id, level });
+            });
+
+            // Build TOC HTML
+            let tocHtml = '<ul>';
+            tocItems.forEach(item => {
+                tocHtml += `<li><a href="#${item.id}" class="toc-${item.level}">${item.text}</a></li>`;
+            });
+            tocHtml += '</ul>';
+
+            // Create TOC container
+            const tocContainer = document.createElement('div');
+            tocContainer.className = 'toc-container';
+            tocContainer.innerHTML = `
+                <div class="toc-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                    <h3>Table of Contents</h3>
+                    <span class="toc-toggle">▼</span>
+                </div>
+                <div class="toc-content">${tocHtml}</div>
+            `;
+
+            return tocContainer;
+        }
+
         // Fetch and render README
         async function loadReadme() {
             try {
@@ -221,6 +331,12 @@
                 const container = document.getElementById('readme');
                 container.className = 'markdown-body';
                 container.innerHTML = marked.parse(data.content);
+
+                // Generate and insert TOC at the top
+                const toc = generateTOC(container);
+                if (toc) {
+                    container.insertBefore(toc, container.firstChild);
+                }
 
                 // Render mermaid diagrams
                 await mermaid.run({

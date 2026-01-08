@@ -89,8 +89,14 @@ This is a long list of potential features. Those marked with an asterisk are alr
   - restrict shown images to those matching a certain monitor orientation (portrait/landscape)
   - recognize current monitor orientation (tilt sensor)
   - show image exactly if it meets the monitor resolution (*)
-  - adapt image size cleverly if it does not meet size or proportions
-  - offer options for borders/frames
+  - image preparation (may or may not happen within the slide showing process)
+    - adapt image size cleverly if it does not meet size or proportions
+    - allow some degree of distortion
+    - add border in color which harmoizes with image content
+    - add image file name in decent small gray font
+    - prepare images to be shown in landscape mode even when they have portrait format
+    - prepare images to be shown in portrait mode even when they have landscape format
+    - offer art style borders/frames and integrate into the image
 
 - energy
   - run on an energy efficient device (*)
@@ -124,11 +130,10 @@ This is a long list of potential features. Those marked with an asterisk are alr
   - sftp access to image directory (*)
   - batch upload via API
   - interactive upload via a web client (*) - installed "filebrowser" executable
-  - image pre-formatting for optimal display
 
 - documentation
-  - architectural documentation in README.md (*)
-  - being able to show this documentation when t7he app is running (*)
+  - architecture documentation in README.md (*)
+  - being able to show this documentation when the app is running (*)
 
 ---
 
