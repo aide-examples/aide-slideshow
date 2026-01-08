@@ -25,6 +25,12 @@ try:
 except ImportError:
     pass  # AVIF support optional
 
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()  # enables HEIC/HEIF support
+except ImportError:
+    pass  # HEIC support optional
+
 
 EPS = 1e-6
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".heic", ".avif"}

@@ -561,11 +561,25 @@ sudo apt install ir-keytable
 ## 2. Python Dependencies (Optional)
 
 ```bash
+# For image preparation (imgPrepare.py)
+pip install Pillow
+
+# Optional: for HEIC/HEIF support (iPhone photos)
+pip install pillow-heif
+
+# Optional: for AVIF support
+pip install pillow-avif-plugin
+
 # For Samsung WebSocket control
 pip install samsungtvws
 
 # For MQTT motion sensor
 pip install paho-mqtt
+```
+
+**Note:** On Raspberry Pi, you can also install Pillow via apt:
+```bash
+sudo apt install python3-pil
 ```
 
 ## 3. Deploy Files
@@ -574,13 +588,15 @@ pip install paho-mqtt
 # Clone the repository or copy files
 mkdir -p /home/pi/slideshow
 cp slideshow.py /home/pi/slideshow/
+cp imgPrepare.py /home/pi/slideshow/
 cp config.json /home/pi/slideshow/
 cp README.md /home/pi/slideshow/
 cp -r static /home/pi/slideshow/
 cp -r sample_images /home/pi/slideshow/
 
-# Create image directory for your own photos
-mkdir -p /home/pi/img
+# Create image directories
+mkdir -p /home/pi/img      # For prepared/displayed images
+mkdir -p /home/pi/uploads  # Optional: for raw uploads before preparation
 ```
 
 The `static/` directory contains the web UI and is required for HTTP control. The `sample_images/` directory provides demo images so the slideshow works immediately - you can remove it once you add your own photos to `/home/pi/img`.
