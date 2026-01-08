@@ -1208,8 +1208,9 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
 
                 elif path == '/folders':
                     folders = set()
-                    for root, dirs, _ in os.walk(controller.slideshow.image_dir):
-                        rel_root = os.path.relpath(root, controller.slideshow.image_dir)
+                    effective_dir = controller.slideshow.get_effective_image_dir()
+                    for root, dirs, _ in os.walk(effective_dir):
+                        rel_root = os.path.relpath(root, effective_dir)
                         if rel_root != '.':
                             folders.add(rel_root)
                         for d in dirs:
@@ -1434,10 +1435,37 @@ class Slideshow:
         pygame.quit()
         sys.exit(0)
 
+    def get_effective_image_dir(self):
+        """Get the directory currently being used for images (may be sample_images fallback)."""
+        if self._scan_directory(self.image_dir):
+            return self.image_dir
+        sample_dir = os.path.join(SCRIPT_DIR, "sample_images")
+        if os.path.isdir(sample_dir) and self._scan_directory(sample_dir):
+            return sample_dir
+        return self.image_dir
+
     def get_images(self):
-        """Get images, optionally filtered by folder."""
+        """Get images, optionally filtered by folder. Falls back to sample_images if empty."""
+        images = self._scan_directory(self.image_dir)
+
+        # Fallback to sample_images if configured directory is empty or missing
+        if not images:
+            sample_dir = os.path.join(SCRIPT_DIR, "sample_images")
+            if os.path.isdir(sample_dir):
+                images = self._scan_directory(sample_dir)
+                if images and not hasattr(self, '_sample_warning_shown'):
+                    print(f"Using sample images from {sample_dir}")
+                    print("Configure image_dir in config.json to use your own photos")
+                    self._sample_warning_shown = True
+
+        return images
+
+    def _scan_directory(self, directory):
+        """Scan a directory recursively for images."""
         images = []
-        for root, _, files in os.walk(self.image_dir):
+        if not os.path.isdir(directory):
+            return images
+        for root, _, files in os.walk(directory):
             if self.current_filter and self.current_filter not in root:
                 continue
             for f in files:

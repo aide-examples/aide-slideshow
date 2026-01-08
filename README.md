@@ -28,6 +28,10 @@ pygame and a suitable driver (vc4-kms-v3d). If we are carefully setting the limi
 we will have sufficient memory for the python process - which must not only read images but shall
 also handle a Web API and optionally be able to take commands from a classical infrared remote control.
 
+As is often the case with developing systems for a tiny target hardware we aim at being able to test the application within the development environment (windows/wsl ubuntu). Therefore we added hardware detection and bypassing for the raspi-specific libraries. Hardware sensors are replaced by stubs.
+
+Because this application is part of the *[aide-examples](https://github.com/aide-examples)* we also want to offer easy access to the current document. So we included an "about.html" which allows viewing markdown files and mermaid diagrams on the web client of the application.
+
 
 ## Requirements
 
@@ -673,6 +677,23 @@ curl http://localhost:8080/skip
 ```
 
 Hardware providers (GPIO, CEC) gracefully fall back to no-op implementations when running on non-Raspberry Pi systems, so the slideshow runs without errors.
+
+### Sample Images
+
+The repository includes sample images in `sample_images/` so the slideshow works immediately after cloning without any configuration. When the configured `image_dir` is empty or doesn't exist, the slideshow automatically falls back to these bundled images.
+
+```
+sample_images/
+├── landscapes/
+│   ├── mountain_lake.jpg
+│   └── ocean_sunset.jpg
+├── animals/
+│   ├── fox.jpg
+│   └── deer.jpg
+└── LICENSE
+```
+
+The web control UI shows the subdirectories (landscapes, animals) as filter options. To use your own photos, configure `image_dir` in `config.json` or use the `--image-dir` command line option.
 
 ### Performance Note
 

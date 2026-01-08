@@ -1,0 +1,21 @@
+Sample Images - Unsplash License
+
+All images in this directory are from Unsplash (https://unsplash.com)
+and are free to use under the Unsplash License:
+
+https://unsplash.com/license
+
+Summary:
+- All photos can be used for free
+- Commercial and non-commercial purposes
+- No permission needed (but attribution is appreciated)
+
+Image Credits:
+- landscapes/mountain_lake.jpg - Unsplash
+- landscapes/ocean_sunset.jpg - Unsplash
+- animals/fox.jpg - Unsplash
+- animals/deer.jpg - Unsplash
+
+These sample images are provided for demonstration purposes.
+Replace them with your own photos by configuring the image_dir
+setting in config.json.
