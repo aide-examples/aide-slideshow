@@ -28,29 +28,28 @@ pygame and a suitable driver (vc4-kms-v3d). If we are carefully setting the limi
 we will have sufficient memory for the python process - which must not only read images but shall
 also handle a Web API and optionally be able to take commands from a classical infrared remote control.
 
-As is often the case with developing systems for a tiny target hardware we aim at being able to test the application within the development environment (windows/wsl ubuntu). Therefore we added hardware detection and bypassing for the raspi-specific libraries. Hardware sensors are replaced by stubs.
+As is often the case with developing systems for tiny target hardware we aim at being able to test the application within the development environment (windows/wsl ubuntu). Therefore we added hardware detection and bypassing for the raspi-specific libraries. Hardware sensors are replaced by stubs.
 
 Because this application is part of the *[aide-examples](https://github.com/aide-examples)* we also want to offer easy access to the current document. So we included an "about.html" which allows viewing markdown files and mermaid diagrams on the web client of the application.
 
 
 ## Requirements
 
-This is a maximal list of potential features. Those marked with an (*) are already implented
-(*-) means partially implemented.
+This is a maximal list of potential features. Those marked with an asterisk are already implented.
 
 - show images
   - in random order (*)
-  - all or from a sub selection (*)
-  - restrict shown images to those matching a certain monitor orientation (portrait/l0andscape)
+  - in canonical order by name or timestamp
+  - show all images or only a subset (*)
+  - restrict shown images to those matching a certain monitor orientation (portrait/landscape)
   - recognize current monitor orientation (tilt sensor)
   - show image exactly if it meets the monitor resolution (*)
-  - adapt image size cleverly
-  - adapt brightness to ambient light
+  - adapt image size cleverly if it does not meet size or proportions
   - offer options for borders/frames
 
 - energy
   - run on an energy efficient device (*)
-  - switch the monitor off when no images shall be shown (*-)
+  - switch the monitor off when no images shall be shown (*)
   - react on motion detection
   - allow time dependant on/off periods
   - allow daylight dependant on/off periods
@@ -59,7 +58,7 @@ This is a maximal list of potential features. Those marked with an (*) are alrea
 - control (how)
   - via mouse
   - via keyboard
-  - via an REST API (*)
+  - via a REST API (*)
   - via an HTTP UI (*)
   - via an infrared remote control
 
@@ -68,15 +67,13 @@ This is a maximal list of potential features. Those marked with an (*) are alrea
   - pause (*)
   - forward/skip (*)
   - backward
-  - random sequence (*)
-  - canonical sequence
-  - select image group via directory (*)
+  - presentation order
+  - select image subdirectory as a subset for presentation (*)
   - presentation speed (*)
-  - type of image change (slide, fade, ..)
+  - select type of image change (slide, fade, ..)
   - monitor on/off via CEC (*)
   - monitor on/off via relay (AC power)
   - monitor on/off via shelly plug
-
 
 - image administration
   - sftp access to image directory (*)
@@ -84,6 +81,9 @@ This is a maximal list of potential features. Those marked with an (*) are alrea
   - interactive upload via a web client (*) - installed "filebrowser" executable
   - image pre-formatting for optimal display
 
+- documentation
+  - architectural documentation in README.md (*)
+  - being able to show this documentation when t7he app is running (*)
 
 
 ## Architecture Overview
@@ -520,13 +520,19 @@ pip install paho-mqtt
 ### 3. Deploy Files
 
 ```bash
+# Clone the repository or copy files
 mkdir -p /home/pi/slideshow
 cp slideshow.py /home/pi/slideshow/
 cp config.json /home/pi/slideshow/
+cp README.md /home/pi/slideshow/
+cp -r static /home/pi/slideshow/
+cp -r sample_images /home/pi/slideshow/
 
-# Create image directory
+# Create image directory for your own photos
 mkdir -p /home/pi/img
 ```
+
+The `static/` directory contains the web UI and is required for HTTP control. The `sample_images/` directory provides demo images so the slideshow works immediately - you can remove it once you add your own photos to `/home/pi/img`.
 
 ### 4. Configure
 
