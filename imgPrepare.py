@@ -215,8 +215,16 @@ def add_text(img, text):
         font = ImageFont.truetype("arial.ttf", 32)
     except OSError:
         font = ImageFont.load_default()
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_h = bbox[3] - bbox[1]
+
+    # Get text height (compatible with older Pillow versions)
+    try:
+        # Pillow >= 8.0
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_h = bbox[3] - bbox[1]
+    except AttributeError:
+        # Pillow < 8.0 fallback
+        text_h = draw.textsize(text, font=font)[1]
+
     x = 10
     y = img.height - text_h - 10
     draw.text((x, y), text, font=font, fill=(180, 180, 180))
