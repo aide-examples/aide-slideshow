@@ -16,7 +16,6 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Generator
 
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 
@@ -42,7 +41,7 @@ class PrepareConfig:
     input_dir: Path
     output_dir: Path
     mode: str = "hybrid-stretch"
-    target_size: tuple[int, int] = (1920, 1080)
+    target_size: tuple = (1920, 1080)
     pad_mode: str = "average"
     crop_min: float = 0.8
     stretch_max: float = 0.2
@@ -63,14 +62,14 @@ class PrepareProgress:
     filepath: str
     output_path: str
     status: str  # 'processed', 'exists', 'error'
-    error_message: str | None = None
+    error_message: str = None
 
 
-def is_image_file(filename: str) -> bool:
+def is_image_file(filename):
     return Path(filename).suffix.lower() in SUPPORTED_EXTENSIONS
 
 
-def ensure_jpg(filepath: Path) -> Path | None:
+def ensure_jpg(filepath):
     """Convert non-JPG images to JPG if needed."""
     ext = filepath.suffix.lower()
     if ext in {".jpg", ".jpeg"}:
@@ -90,11 +89,11 @@ def ensure_jpg(filepath: Path) -> Path | None:
         return None
 
 
-def resize_uniform(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
+def resize_uniform(img, target_size):
     return img.resize(target_size, Image.LANCZOS)
 
 
-def pad_to_aspect(img: Image.Image, target_aspect: float, pad_mode: str) -> Image.Image:
+def pad_to_aspect(img, target_aspect, pad_mode):
     w, h = img.size
     aspect = w / h
 
@@ -125,9 +124,7 @@ def pad_to_aspect(img: Image.Image, target_aspect: float, pad_mode: str) -> Imag
     return new_img
 
 
-def crop_towards_aspect(
-    img: Image.Image, target_aspect: float, max_crop_fraction: float
-) -> tuple[Image.Image, float, bool]:
+def crop_towards_aspect(img, target_aspect, max_crop_fraction):
     w, h = img.size
     aspect = w / h
 
@@ -158,21 +155,19 @@ def crop_towards_aspect(
         return cropped, delta / h, abs((cropped.width / cropped.height) - target_aspect) < EPS
 
 
-def mode_pad(img: Image.Image, target_size: tuple[int, int], pad_mode: str) -> Image.Image:
+def mode_pad(img, target_size, pad_mode):
     target_aspect = target_size[0] / target_size[1]
     return resize_uniform(pad_to_aspect(img, target_aspect, pad_mode), target_size)
 
 
-def mode_crop(img: Image.Image, target_size: tuple[int, int], crop_min: float) -> Image.Image:
+def mode_crop(img, target_size, crop_min):
     target_aspect = target_size[0] / target_size[1]
     max_crop_fraction = max(0.0, min(1.0, 1.0 - crop_min))
     cropped, _, _ = crop_towards_aspect(img, target_aspect, max_crop_fraction)
     return resize_uniform(cropped, target_size)
 
 
-def mode_hybrid(
-    img: Image.Image, target_size: tuple[int, int], crop_min: float, pad_mode: str
-) -> Image.Image:
+def mode_hybrid(img, target_size, crop_min, pad_mode):
     target_aspect = target_size[0] / target_size[1]
     max_crop_fraction = max(0.0, min(1.0, 1.0 - crop_min))
     cropped, _, reached_exact = crop_towards_aspect(img, target_aspect, max_crop_fraction)
@@ -182,14 +177,7 @@ def mode_hybrid(
     return resize_uniform(padded, target_size)
 
 
-def mode_hybrid_stretch(
-    img: Image.Image,
-    target_size: tuple[int, int],
-    crop_min: float,
-    stretch_max: float,
-    no_stretch_limit: float,
-    pad_mode: str,
-) -> Image.Image:
+def mode_hybrid_stretch(img, target_size, crop_min, stretch_max, no_stretch_limit, pad_mode):
     target_aspect = target_size[0] / target_size[1]
     w0, h0 = img.size
     a0 = w0 / h0
@@ -221,7 +209,7 @@ def mode_hybrid_stretch(
         return resize_uniform(padded, target_size)
 
 
-def add_text(img: Image.Image, text: str) -> Image.Image:
+def add_text(img, text):
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype("arial.ttf", 32)
@@ -236,21 +224,21 @@ def add_text(img: Image.Image, text: str) -> Image.Image:
 
 
 def process_image(
-    filepath: Path,
-    output_dir: Path,
-    prefix: str,
-    mode: str,
-    target_size: tuple[int, int],
-    pad_mode: str,
-    crop_min: float,
-    stretch_max: float,
-    no_stretch_limit: float,
-    show_text: bool,
-    skip_existing: bool,
-    dry_run: bool,
-    verbose: bool,
-    quiet: bool,
-) -> tuple[str, Path, str | None]:
+    filepath,
+    output_dir,
+    prefix,
+    mode,
+    target_size,
+    pad_mode,
+    crop_min,
+    stretch_max,
+    no_stretch_limit,
+    show_text,
+    skip_existing,
+    dry_run,
+    verbose,
+    quiet,
+):
     """
     Process a single image.
 
@@ -326,7 +314,7 @@ def process_image(
             del out_img
 
 
-def count_image_files(input_dir: Path) -> int:
+def count_image_files(input_dir):
     """Count total image files in directory (for progress estimation)."""
     count = 0
     if not input_dir.is_dir():
@@ -338,7 +326,7 @@ def count_image_files(input_dir: Path) -> int:
     return count
 
 
-def list_subdirs(directory: Path) -> list[str]:
+def list_subdirs(directory):
     """List all subdirectories (for UI folder selection)."""
     subdirs = []
     if not directory.is_dir():
@@ -351,7 +339,7 @@ def list_subdirs(directory: Path) -> list[str]:
     return sorted(subdirs)
 
 
-def process_folder_iter(config: PrepareConfig) -> Generator[PrepareProgress, None, dict[str, int]]:
+def process_folder_iter(config):
     """
     Process all images with progress reporting via generator.
 
@@ -423,21 +411,21 @@ def process_folder_iter(config: PrepareConfig) -> Generator[PrepareProgress, Non
 
 
 def process_folder(
-    input_dir: Path,
-    output_dir: Path,
-    mode: str,
-    target_size: tuple[int, int],
-    pad_mode: str,
-    crop_min: float,
-    stretch_max: float,
-    no_stretch_limit: float,
-    show_text: bool,
-    skip_existing: bool,
-    dry_run: bool,
-    flatten: bool,
-    verbose: bool,
-    quiet: bool,
-) -> dict[str, int]:
+    input_dir,
+    output_dir,
+    mode,
+    target_size,
+    pad_mode,
+    crop_min,
+    stretch_max,
+    no_stretch_limit,
+    show_text,
+    skip_existing,
+    dry_run,
+    flatten,
+    verbose,
+    quiet,
+):
     """Process all images in folder recursively. Returns counts by status."""
     config = PrepareConfig(
         input_dir=input_dir,
@@ -471,7 +459,7 @@ def process_folder(
     return counts
 
 
-def parse_size(value: str) -> tuple[int, int]:
+def parse_size(value):
     """Parse WxH format into tuple."""
     try:
         w, h = value.lower().split("x")
@@ -480,7 +468,7 @@ def parse_size(value: str) -> tuple[int, int]:
         raise argparse.ArgumentTypeError(f"Invalid size format: {value}. Use WxH (e.g., 1920x1080)")
 
 
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser(
         description="Resize images for digital photo frames.",
         formatter_class=argparse.RawDescriptionHelpFormatter,

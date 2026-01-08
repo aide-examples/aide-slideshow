@@ -584,7 +584,7 @@ class SamsungWSMonitorControl(MonitorControlProvider):
         except (urllib.error.URLError, TimeoutError, OSError):
             return False
 
-    def _send_key(self, key: str) -> bool:
+    def _send_key(self, key):
         """Send a key command to the TV."""
         tv = self._get_connection()
         if not tv:
@@ -669,7 +669,7 @@ class SamsungWSMonitorControl(MonitorControlProvider):
         print("Samsung WS: Failed to turn off TV")
         return False
 
-    def send_key(self, key: str) -> bool:
+    def send_key(self, key):
         """
         Send any remote key to the TV.
 
@@ -1025,7 +1025,7 @@ class PathSecurityError(ValueError):
     pass
 
 
-def resolve_safe_path(path_str: str, base_dir: str = None) -> str:
+def resolve_safe_path(path_str, base_dir=None):
     """
     Resolve a path safely, rejecting path traversal attempts.
 
