@@ -1017,7 +1017,8 @@ class RemoteControlProvider(ABC):
 # =============================================================================
 
 # Path to static files directory (relative to script location)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # app/
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)                 # parent of app/
 STATIC_DIR = os.path.join(SCRIPT_DIR, "static")
 
 
@@ -1032,7 +1033,7 @@ def resolve_safe_path(path_str, base_dir=None):
 
     Args:
         path_str: Path from config (relative or absolute)
-        base_dir: Base directory for relative paths (defaults to SCRIPT_DIR)
+        base_dir: Base directory for relative paths (defaults to PROJECT_DIR)
 
     Returns:
         Absolute path string
@@ -1041,7 +1042,7 @@ def resolve_safe_path(path_str, base_dir=None):
         PathSecurityError: If path contains '..' traversal sequences
     """
     if base_dir is None:
-        base_dir = SCRIPT_DIR
+        base_dir = PROJECT_DIR
 
     # Block path traversal sequences
     if '..' in path_str:
@@ -1902,6 +1903,7 @@ class Slideshow:
             if self.current_img is None:
                 self.screen.blit(img, (0, 0))
                 pygame.display.flip()
+                pygame.event.pump()  # WSLg/Wayland: process events to show first image
             else:
                 self.fade_transition(img)
 
@@ -1960,9 +1962,9 @@ def main():
     # Load config from multiple possible locations
     config_paths = [
         args.config,  # Command line override first
-        "/home/pi/slideshow/config.json",
+        os.path.join(PROJECT_DIR, "config.json"),  # Parent of app/ (standard location)
+        "/home/pi/aide-slideshow/config.json",
         "/home/pi/config.json",
-        os.path.join(os.path.dirname(__file__), "config.json")
     ]
     config_paths = [p for p in config_paths if p]  # Remove None
 

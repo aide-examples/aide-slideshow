@@ -7,8 +7,8 @@ User=pi
 Group=pi
 # groups for hardware access
 SupplementaryGroups=video render input
-WorkingDirectory=/home/pi
-ExecStart=/usr/bin/python3 /home/pi/slideshow.py
+WorkingDirectory=/home/pi/aide-slideshow
+ExecStart=/usr/bin/python3 /home/pi/aide-slideshow/app/slideshow.py
 Restart=always
 KillSignal=SIGTERM
 TimeoutStopSec=2s
