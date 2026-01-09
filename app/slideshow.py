@@ -1013,13 +1013,166 @@ class RemoteControlProvider(ABC):
 
 
 # =============================================================================
-# WEB UI - Load from static file
+# UPDATE MANAGER - Remote update system
 # =============================================================================
 
 # Path to static files directory (relative to script location)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # app/
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)                 # parent of app/
 STATIC_DIR = os.path.join(SCRIPT_DIR, "static")
+VERSION_FILE = os.path.join(SCRIPT_DIR, "VERSION")
+UPDATE_STATE_DIR = os.path.join(PROJECT_DIR, ".update")
+
+
+def get_local_version():
+    """Read the local version from VERSION file."""
+    try:
+        with open(VERSION_FILE, 'r') as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "0.0.0"
+
+
+def compare_versions(local, remote):
+    """
+    Compare two version strings.
+
+    Returns:
+        1 if remote > local (update available)
+        0 if remote == local (up to date)
+        -1 if remote < local (local is ahead, development mode)
+    """
+    def parse_version(v):
+        # Handle versions like "1.2.3" or "1.2.3-dev"
+        base = v.split('-')[0]
+        parts = base.split('.')
+        return tuple(int(p) for p in parts if p.isdigit())
+
+    try:
+        local_parts = parse_version(local)
+        remote_parts = parse_version(remote)
+
+        if remote_parts > local_parts:
+            return 1
+        elif remote_parts < local_parts:
+            return -1
+        else:
+            return 0
+    except (ValueError, AttributeError):
+        return 0  # Can't compare, assume equal
+
+
+class UpdateManager:
+    """
+    Manages remote updates for the slideshow application.
+
+    Features:
+    - Version checking against GitHub
+    - Manual download and staging
+    - Automatic rollback on failure (max 2 attempts)
+    - Detection when local version is ahead of remote
+    """
+
+    DEFAULT_CONFIG = {
+        "enabled": True,
+        "source": {
+            "repo": "aide-examples/aide-slideshow",
+            "branch": "main"
+        },
+        "auto_check_hours": 24,
+        "auto_check": True,
+        "auto_download": False,
+        "auto_apply": False
+    }
+
+    def __init__(self, config=None):
+        self.config = {**self.DEFAULT_CONFIG, **(config or {})}
+        self.state_dir = UPDATE_STATE_DIR
+        self.state_file = os.path.join(self.state_dir, "state.json")
+        self._ensure_state_dir()
+        self._state = self._load_state()
+
+    def _ensure_state_dir(self):
+        """Create state directory if it doesn't exist."""
+        if not os.path.exists(self.state_dir):
+            try:
+                os.makedirs(self.state_dir, exist_ok=True)
+            except OSError:
+                pass  # May fail on read-only filesystem, that's ok
+
+    def _load_state(self):
+        """Load update state from file."""
+        default_state = {
+            "current_version": get_local_version(),
+            "available_version": None,
+            "update_state": "idle",  # idle, checking, downloading, staged, verifying
+            "pending_verification": False,
+            "consecutive_failures": 0,
+            "updates_disabled": False,
+            "backup_version": None,
+            "last_check": None,
+            "last_update": None
+        }
+
+        try:
+            with open(self.state_file, 'r') as f:
+                saved_state = json.load(f)
+                # Merge with defaults to handle new fields
+                return {**default_state, **saved_state}
+        except (FileNotFoundError, json.JSONDecodeError):
+            return default_state
+
+    def _save_state(self):
+        """Save update state to file."""
+        try:
+            with open(self.state_file, 'w') as f:
+                json.dump(self._state, f, indent=2)
+        except OSError:
+            pass  # May fail on read-only filesystem
+
+    def get_status(self):
+        """Get current update status for API response."""
+        local_version = get_local_version()
+        available = self._state.get("available_version")
+
+        # Determine update availability
+        update_available = False
+        version_comparison = "unknown"
+        if available:
+            cmp = compare_versions(local_version, available)
+            if cmp == 1:
+                update_available = True
+                version_comparison = "update_available"
+            elif cmp == -1:
+                version_comparison = "local_ahead"
+            else:
+                version_comparison = "up_to_date"
+
+        return {
+            "current_version": local_version,
+            "available_version": available,
+            "update_available": update_available,
+            "version_comparison": version_comparison,
+            "update_state": self._state.get("update_state", "idle"),
+            "pending_verification": self._state.get("pending_verification", False),
+            "consecutive_failures": self._state.get("consecutive_failures", 0),
+            "updates_disabled": self._state.get("updates_disabled", False),
+            "updates_enabled": self.config.get("enabled", True),
+            "backup_version": self._state.get("backup_version"),
+            "can_rollback": self._state.get("backup_version") is not None,
+            "last_check": self._state.get("last_check"),
+            "last_update": self._state.get("last_update"),
+            "source": self.config.get("source", {})
+        }
+
+
+# Global update manager instance (initialized in main)
+update_manager = None
+
+
+# =============================================================================
+# WEB UI - Load from static file
+# =============================================================================
 
 
 class PathSecurityError(ValueError):
@@ -1396,6 +1549,13 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                         for d in dirs:
                             folders.add(os.path.join(rel_root, d) if rel_root != '.' else d)
                     self.send_json({"folders": sorted(folders)})
+
+                # Update API endpoints
+                elif path == '/api/update/status':
+                    if update_manager:
+                        self.send_json(update_manager.get_status())
+                    else:
+                        self.send_json({"error": "Update manager not initialized"}, 500)
 
                 # Image preparation endpoints
                 elif path == '/prepare' or path == '/prepare.html':
@@ -1986,6 +2146,12 @@ def main():
     if args.duration:
         config['display_duration'] = args.duration
         print(f"Display duration overridden to: {args.duration}s")
+
+    # Initialize update manager
+    global update_manager
+    update_config = config.get("update", {})
+    update_manager = UpdateManager(update_config)
+    print(f"Version: {get_local_version()}")
 
     # Create slideshow
     app = Slideshow(config)
