@@ -1230,11 +1230,12 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         self._thread = None
 
     def _get_server_url(self):
-        """Get the best URL to reach this server."""
+        """Get the best URL to reach this server (may be slow due to DNS)."""
         import socket
         hostname = socket.gethostname()
         try:
             # Try to get FQDN (fully qualified domain name)
+            # Note: This can be slow under WSL due to DNS timeouts
             fqdn = socket.getfqdn()
             if fqdn and fqdn != hostname and '.' in fqdn:
                 return f"http://{fqdn}:{self.port}"
@@ -1251,12 +1252,22 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
             pass
         return f"http://{hostname}:{self.port}"
 
+    def _print_server_url_async(self):
+        """Print server URL in background thread to avoid blocking startup."""
+        def resolve_and_print():
+            url = self._get_server_url()
+            print(f"HTTP API server reachable at {url}")
+        thread = threading.Thread(target=resolve_and_print, daemon=True)
+        thread.start()
+
     def start(self):
         handler = self._create_handler()
         self._server = HTTPServer(('0.0.0.0', self.port), handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
-        print(f"HTTP API server running at {self._get_server_url()}")
+        print(f"HTTP API server started on port {self.port}")
+        # Resolve URL asynchronously to avoid blocking (getfqdn can be slow under WSL)
+        self._print_server_url_async()
 
     def stop(self):
         if self._server:
@@ -1701,6 +1712,12 @@ class Slideshow:
                 pygame.DOUBLEBUF | pygame.RESIZABLE
             )
             print(f"Running in windowed mode: {width}x{height}")
+
+        # WSLg/Wayland workaround: force window to render immediately
+        # Without this, the window may stay black for ~20 seconds under WSLg
+        self.screen.fill((0, 0, 0))
+        pygame.display.flip()
+        pygame.event.pump()
 
         self.width, self.height = self.screen.get_size()
         self.clock = pygame.time.Clock()
