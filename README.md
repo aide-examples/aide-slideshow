@@ -719,7 +719,7 @@ flowchart TB
             FB[File Browser UI]
         end
 
-        ImgDir[(image_dir)]
+        ImgDir[(image_dir: show && upload)]
     end
 
     Browser --> WebUI
@@ -951,6 +951,239 @@ To add a new provider:
 3. Update the factory function (`create_monitor_control`, `create_motion_sensor`, or main)
 
 4. Document in this README
+
+---
+
+# Read-Only Filesystem (Power Loss Protection)
+
+For permanent operation as a digital photo frame, a read-only filesystem is recommended to protect the SD card from corruption during power loss.
+
+## Concept
+
+```
+SD Card Layout:
+┌─────────────────────────────────────────────────────┐
+│ Partition 1: /boot/firmware (FAT32, ~512MB)         │
+├─────────────────────────────────────────────────────┤
+│ Partition 2: / (ext4, ~4-8GB) → READ-ONLY           │
+│   - System, Python, slideshow code                  │
+│   - config.json, static/, sample_images/            │
+├─────────────────────────────────────────────────────┤
+│ Partition 3: /data (ext4, remaining) → READ-WRITE   │
+│   - Images via symlink: img → /data/img             │
+└─────────────────────────────────────────────────────┘
+```
+
+**Advantage:** The slideshow uses relative paths (`img/show`, `img/upload`). A symlink makes the transition transparent - no code changes required.
+
+## Setup
+
+### 1. Create Backup (Windows)
+
+Use **Win32 Disk Imager** (https://win32diskimager.org):
+
+1. Insert SD card into Windows PC
+2. Open Win32 Disk Imager
+3. Select a path for the backup file (e.g., `D:\backup\slideshow.img`)
+4. Select the SD card drive letter
+5. Click **Read** to create the backup image
+
+To restore later: Select the `.img` file and click **Write**.
+
+### 2. Partition SD Card (Windows with WSL)
+
+**Prerequisites:** WSL2 with Ubuntu installed, SD card reader.
+
+```powershell
+# In PowerShell (Admin): Find the SD card disk number
+wmic diskdrive list brief
+# Note the DeviceID, e.g., \\.\PHYSICALDRIVE2
+```
+
+```powershell
+# Attach SD card to WSL (replace X with disk number from above)
+wsl --mount \\.\PHYSICALDRIVEX --bare
+```
+
+```bash
+# In WSL/Ubuntu: Install tools
+sudo apt update && sudo apt install fdisk e2fsprogs
+
+# Find the SD card device (usually /dev/sdX)
+lsblk
+# Look for a device matching your SD card size, e.g., /dev/sdd
+
+# Check current partitions
+sudo fdisk -l /dev/sdd
+```
+
+**Resize and create partitions:**
+
+```bash
+# Resize root partition filesystem first (unmount if mounted)
+sudo e2fsck -f /dev/sdd2
+sudo resize2fs /dev/sdd2 4G   # Shrink filesystem to 4GB
+
+# Edit partition table
+sudo fdisk /dev/sdd
+# Commands in fdisk:
+#   p          - print current partitions (note end sector of partition 1)
+#   d, 2       - delete partition 2
+#   n, p, 2    - create new partition 2, start at same sector, +4G size
+#   n, p, 3    - create new partition 3, default start, default end (rest)
+#   w          - write changes and exit
+
+# Format the new data partition as ext4
+sudo mkfs.ext4 -L data /dev/sdd3
+```
+
+**Recommended filesystem:** ext4 with default settings. It offers the best balance of reliability, performance, and Linux compatibility. The `-L data` flag sets the partition label for easier identification.
+
+```powershell
+# In PowerShell: Detach SD card from WSL when done
+wsl --unmount \\.\PHYSICALDRIVEX
+```
+
+### 3. Configure New Partition (on the Pi)
+
+Insert SD card into Pi and boot:
+
+```bash
+# Create mount point
+sudo mkdir -p /data
+
+# Add to /etc/fstab
+echo '/dev/mmcblk0p3  /data  ext4  defaults,noatime  0  2' | sudo tee -a /etc/fstab
+
+# Mount
+sudo mount /data
+
+# Set permissions
+sudo chown pi:pi /data
+```
+
+### 4. Move Images and Create Symlink
+
+```bash
+# Move images to new partition
+sudo mv /home/pi/slideshow/img /data/img
+
+# Create symlink
+ln -s /data/img /home/pi/slideshow/img
+
+# Verify
+ls -la /home/pi/slideshow/img  # Should point to /data/img
+```
+
+### 5. tmpfs for Temporary Files
+
+Add to `/etc/fstab`:
+
+```fstab
+tmpfs  /tmp      tmpfs  defaults,noatime,nosuid,size=50M  0  0
+tmpfs  /var/log  tmpfs  defaults,noatime,nosuid,size=20M  0  0
+tmpfs  /var/tmp  tmpfs  defaults,noatime,nosuid,size=10M  0  0
+```
+
+### 6. Install and Enable overlayroot
+
+```bash
+# Install overlayroot
+sudo apt install overlayroot
+
+# Configure
+sudo nano /etc/overlayroot.conf
+```
+
+Set content:
+```
+overlayroot="tmpfs:swap=1,recurse=0"
+```
+
+```bash
+# Reboot to activate
+sudo reboot
+```
+
+After reboot, the root filesystem is write-protected. All write operations go to RAM and are lost after reboot - except on `/data`.
+
+## Maintenance Mode
+
+The overlayroot system works by mounting the real root partition underneath the tmpfs overlay. The `overlayroot-chroot` command gives you direct access to the real (persistent) root filesystem, bypassing the overlay.
+
+**Why changes persist:** When you run `overlayroot-chroot`, you're editing files on the actual SD card partition, not the RAM overlay. These changes are written directly to disk and survive reboots.
+
+```bash
+# Enter writable chroot environment (writes to real root partition)
+sudo overlayroot-chroot
+
+# System updates
+apt update && apt upgrade
+
+# Update slideshow scripts
+cp /data/new-slideshow.py /home/pi/slideshow/slideshow.py
+cp /data/new-imgPrepare.py /home/pi/slideshow/imgPrepare.py
+
+# Edit configuration
+nano /etc/overlayroot.conf
+
+# Exit chroot - you're back in the overlay environment
+exit
+
+# Reboot to apply changes (loads updated files into new overlay)
+sudo reboot
+```
+
+**Important:** After exiting `overlayroot-chroot`, you're back in the RAM overlay. The changes are saved on disk but not yet active. A reboot is required to load the updated files into the new overlay session.
+
+## Verification
+
+```bash
+# Root should be read-only
+touch /test.txt  # Expected: "Read-only file system"
+
+# /data should be writable
+touch /data/test.txt && rm /data/test.txt  # Should work
+
+# Verify symlink
+ls -la ~/slideshow/img  # Points to /data/img
+
+# Test slideshow
+sudo systemctl restart slideshow
+curl http://localhost:8080/status
+```
+
+## Rollback (Windows with WSL)
+
+If the Pi won't boot, fix the SD card from Windows/WSL:
+
+```powershell
+# PowerShell (Admin): Attach SD card to WSL
+wsl --mount \\.\PHYSICALDRIVEX --bare
+```
+
+```bash
+# In WSL: Mount root partition
+sudo mkdir -p /mnt/piroot
+sudo mount /dev/sdd2 /mnt/piroot
+
+# Disable overlayroot
+sudo nano /mnt/piroot/etc/overlayroot.conf
+# Set: overlayroot=""
+
+# If needed, also check /etc/fstab
+sudo nano /mnt/piroot/etc/fstab
+
+# Unmount
+sudo umount /mnt/piroot
+```
+
+```powershell
+# PowerShell: Detach and safely remove SD card
+wsl --unmount \\.\PHYSICALDRIVEX
+```
+
+Put SD card back in Pi and reboot - system will be writable again
 
 ---
 
