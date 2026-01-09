@@ -1165,6 +1165,81 @@ class UpdateManager:
             "source": self.config.get("source", {})
         }
 
+    def check_for_updates(self):
+        """
+        Check GitHub for a newer version.
+
+        Returns:
+            dict with check results including available_version and comparison
+        """
+        import urllib.request
+        import datetime
+
+        if not self.config.get("enabled", True):
+            return {"success": False, "error": "Updates are disabled in config"}
+
+        if self._state.get("updates_disabled", False):
+            return {"success": False, "error": "Updates disabled due to repeated failures"}
+
+        source = self.config.get("source", {})
+        repo = source.get("repo", "aide-examples/aide-slideshow")
+        branch = source.get("branch", "main")
+
+        # Build URL for raw VERSION file
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/app/VERSION"
+
+        self._state["update_state"] = "checking"
+        self._save_state()
+
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "AIDE-Slideshow-Updater"})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                remote_version = response.read().decode('utf-8').strip()
+
+            local_version = get_local_version()
+            cmp = compare_versions(local_version, remote_version)
+
+            # Update state
+            self._state["available_version"] = remote_version
+            self._state["last_check"] = datetime.datetime.now().isoformat()
+            self._state["update_state"] = "idle"
+            self._save_state()
+
+            # Determine result
+            if cmp == 1:
+                return {
+                    "success": True,
+                    "update_available": True,
+                    "current_version": local_version,
+                    "available_version": remote_version,
+                    "message": f"Update available: {local_version} → {remote_version}"
+                }
+            elif cmp == -1:
+                return {
+                    "success": True,
+                    "update_available": False,
+                    "current_version": local_version,
+                    "available_version": remote_version,
+                    "message": f"Local version ({local_version}) is ahead of remote ({remote_version})"
+                }
+            else:
+                return {
+                    "success": True,
+                    "update_available": False,
+                    "current_version": local_version,
+                    "available_version": remote_version,
+                    "message": f"Already up to date ({local_version})"
+                }
+
+        except urllib.error.URLError as e:
+            self._state["update_state"] = "idle"
+            self._save_state()
+            return {"success": False, "error": f"Network error: {e.reason}"}
+        except Exception as e:
+            self._state["update_state"] = "idle"
+            self._save_state()
+            return {"success": False, "error": str(e)}
+
 
 # Global update manager instance (initialized in main)
 update_manager = None
@@ -1616,6 +1691,8 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                             "GET /api/prepare/status - Preparation job status",
                             "POST /api/prepare/start - Start preparation job",
                             "GET /api/prepare/cancel - Cancel running job",
+                            "GET /api/update/status - Update system status",
+                            "POST /api/update/check - Check for updates on GitHub",
                         ]
                     })
 
@@ -1633,7 +1710,14 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                     self.send_json({"error": "Invalid JSON"}, 400)
                     return
 
-                if path == '/api/prepare/start':
+                if path == '/api/update/check':
+                    if update_manager:
+                        result = update_manager.check_for_updates()
+                        self.send_json(result)
+                    else:
+                        self.send_json({"error": "Update manager not initialized"}, 500)
+
+                elif path == '/api/prepare/start':
                     module = get_imgPrepare()
                     if not module:
                         self.send_json({"error": "imgPrepare module not available"}, 500)

@@ -1,8 +1,10 @@
-# Photo Slideshow
+# AIDE - Slideshow
 
 A modular fullscreen photo slideshow with a plugin architecture for different hardware setups.
 
 Designed to run on a dedicated device connected to a wall mounted display as a digital photo frame.
+
+This project is part of [AIDE examples](https://github.com/aide-examples) - a series of applications built almost completely with agentic coding.
 
 ---
 
