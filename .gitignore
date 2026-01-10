@@ -2,3 +2,4 @@ filebrowser.db
 filebrowser.log
 img/*
 __pycache__/
+.update/
