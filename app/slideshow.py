@@ -2331,8 +2331,28 @@ class Slideshow:
         # Initialize monitor control
         self.monitor = create_monitor_control(config.get("monitor_control", {}))
 
-        # Initialize pygame display (disable audio to avoid ALSA errors)
-        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        # Check for connected display on Raspberry Pi (kmsdrm requires a monitor)
+        if PLATFORM == 'raspi':
+            display_connected = False
+            try:
+                # Check DRM connector status
+                for connector in os.listdir('/sys/class/drm/'):
+                    status_file = f'/sys/class/drm/{connector}/status'
+                    if os.path.exists(status_file):
+                        with open(status_file) as f:
+                            if f.read().strip() == 'connected':
+                                display_connected = True
+                                break
+            except Exception:
+                pass
+            if not display_connected:
+                print("WARNING: No display connected! The slideshow requires a monitor.")
+                print("         Connect a display via HDMI and restart the service.")
+                sys.exit(1)
+
+        # Initialize pygame display (disable audio on WSL2 to avoid ALSA errors)
+        if PLATFORM == 'wsl2':
+            os.environ['SDL_AUDIODRIVER'] = 'dummy'
         pygame.display.init()
         pygame.init()
 

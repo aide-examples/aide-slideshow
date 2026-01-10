@@ -970,11 +970,11 @@ SD Card Layout:
 │ Partition 1: /boot/firmware (FAT32, ~512MB)         │
 ├─────────────────────────────────────────────────────┤
 │ Partition 2: / (ext4, ~4-8GB) → READ-ONLY           │
-│   - System, Python, config.json                     │
+│   - System, Python, /home/pi/config.json            │
 ├─────────────────────────────────────────────────────┤
 │ Partition 3: /data (ext4, remaining) → READ-WRITE   │
-│   - Images via symlink: img → /data/img             │
-│   - App code via symlink: app → /data/app           │
+│   - Images: /home/pi/img → /data/img                │
+│   - App code: /home/pi/app → /data/app              │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -994,58 +994,28 @@ Use **Win32 Disk Imager** (https://win32diskimager.org):
 
 To restore later: Select the `.img` file and click **Write**.
 
-### 2. Partition SD Card (Windows with WSL)
+### 2. Partition SD Card
 
-**Prerequisites:** WSL2 with Ubuntu installed, SD card reader.
+**Prerequisites:** A USB stick with Raspbian OS 32 Lite.
 
-```powershell
-# In PowerShell (Admin): Find the SD card disk number
-wmic diskdrive list brief
-# Note the DeviceID, e.g., \\.\PHYSICALDRIVE2
+We want to shrink the system partition on the SD card. This can only be done if the raspi is booted from a different storage device. Prepare a USB stick with OS 32 Lite and boot from there (with the SD card removed). Insert the SD card. Use e2fsck, then resize2fs and fdisk. Be careful.
 ```
-
-```powershell
-# Attach SD card to WSL (replace X with disk number from above)
-wsl --mount \\.\PHYSICALDRIVEX --bare
+sudo e2fsck -f /dev/mmcblk0p2
+sudo resize2fs /dev/mmcblk0p2 8G
 ```
+The next step should be done on the target hardware, although
+the fdisk command will warn you. When we did this step on the
+other raspi where we had executed the resize2fs command the
+altered partition table was not correctly recognized later on the target hardware.
 
-```bash
-# In WSL/Ubuntu: Install tools
-sudo apt update && sudo apt install fdisk e2fsprogs
-
-# Find the SD card device (usually /dev/sdX)
+'''
+sudo fdisk /dev/mmcblk0
+    p (remember start),d 2,
+    n p 2, start, +8G, do not remove signature,
+    p (remember end), n,p,3, start = end+1, enter,p,
+    w or q
+sudo mkfs.ext4 /dev/mmcblk0p3
 lsblk
-# Look for a device matching your SD card size, e.g., /dev/sdd
-
-# Check current partitions
-sudo fdisk -l /dev/sdd
-```
-
-**Resize and create partitions:**
-
-```bash
-# Resize root partition filesystem first (unmount if mounted)
-sudo e2fsck -f /dev/sdd2
-sudo resize2fs /dev/sdd2 4G   # Shrink filesystem to 4GB
-
-# Edit partition table
-sudo fdisk /dev/sdd
-# Commands in fdisk:
-#   p          - print current partitions (note end sector of partition 1)
-#   d, 2       - delete partition 2
-#   n, p, 2    - create new partition 2, start at same sector, +4G size
-#   n, p, 3    - create new partition 3, default start, default end (rest)
-#   w          - write changes and exit
-
-# Format the new data partition as ext4
-sudo mkfs.ext4 -L data /dev/sdd3
-```
-
-**Recommended filesystem:** ext4 with default settings. It offers the best balance of reliability, performance, and Linux compatibility. The `-L data` flag sets the partition label for easier identification.
-
-```powershell
-# In PowerShell: Detach SD card from WSL when done
-wsl --unmount \\.\PHYSICALDRIVEX
 ```
 
 ### 3. Configure New Partition (on the Pi)
@@ -1068,17 +1038,18 @@ sudo chown pi:pi /data
 
 ### 4. Move Data and Create Symlinks
 
+Assuming your slideshow is installed directly under `/home/pi/` with `app/` and `img/` directories:
+
 ```bash
 # Move images to new partition
-sudo mv /home/pi/aide-slideshow/img /data/img
+sudo mv /home/pi/img /data/img
 
 # Move app code to new partition (for remote updates)
-sudo cp -r /home/pi/aide-slideshow/app /data/app
+sudo mv /home/pi/app /data/app
 
 # Create symlinks
-rm -rf /home/pi/aide-slideshow/app
-ln -s /data/img /home/pi/aide-slideshow/img
-ln -s /data/app /home/pi/aide-slideshow/app
+ln -s /data/img /home/pi/img
+ln -s /data/app /home/pi/app
 
 # Create update state directory
 mkdir -p /data/.update/{backup,staging}
@@ -1087,8 +1058,8 @@ mkdir -p /data/.update/{backup,staging}
 sudo chown -R pi:pi /data
 
 # Verify
-ls -la /home/pi/aide-slideshow/img  # Should point to /data/img
-ls -la /home/pi/aide-slideshow/app  # Should point to /data/app
+ls -la /home/pi/img  # Should point to /data/img
+ls -la /home/pi/app  # Should point to /data/app
 ```
 
 ### 5. tmpfs for Temporary Files
@@ -1162,8 +1133,8 @@ touch /test.txt  # Expected: "Read-only file system"
 touch /data/test.txt && rm /data/test.txt  # Should work
 
 # Verify symlinks
-ls -la ~/aide-slideshow/img  # Points to /data/img
-ls -la ~/aide-slideshow/app  # Points to /data/app
+ls -la ~/img  # Points to /data/img
+ls -la ~/app  # Points to /data/app
 
 # Test slideshow
 sudo systemctl restart slideshow
