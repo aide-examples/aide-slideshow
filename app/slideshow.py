@@ -1819,10 +1819,14 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
     def _get_server_url(self):
         """Get the best URL to reach this server (may be slow due to DNS)."""
         import socket
+
+        # Under WSL2, use localhost (FQDN like corno.localdomain doesn't resolve)
+        if PLATFORM == 'wsl2':
+            return f"http://localhost:{self.port}"
+
         hostname = socket.gethostname()
         try:
             # Try to get FQDN (fully qualified domain name)
-            # Note: This can be slow under WSL due to DNS timeouts
             fqdn = socket.getfqdn()
             if fqdn and fqdn != hostname and '.' in fqdn:
                 return f"http://{fqdn}:{self.port}"
@@ -2327,7 +2331,8 @@ class Slideshow:
         # Initialize monitor control
         self.monitor = create_monitor_control(config.get("monitor_control", {}))
 
-        # Initialize pygame display
+        # Initialize pygame display (disable audio to avoid ALSA errors)
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
         pygame.display.init()
         pygame.init()
 
