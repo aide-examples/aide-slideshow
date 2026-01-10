@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slideshow Control</title>
+    <title>AIDE - slideshow</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -14,12 +14,23 @@
             padding: 20px;
         }
         .container { max-width: 400px; margin: 0 auto; }
-        h1 {
-            text-align: center;
-            font-size: 1.5rem;
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 20px;
-            color: #e94560;
         }
+        h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+            margin: 0;
+        }
+        .about-link {
+            color: #888;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .about-link:hover { color: #e94560; }
         .status-card {
             background: rgba(255,255,255,0.1);
             border-radius: 12px;
@@ -86,14 +97,25 @@
             padding: 15px;
         }
         .folders h3 { margin-bottom: 10px; color: #888; font-size: 0.9rem; }
-        .file-manager-link {
-            display: block;
+        .links-row {
+            display: flex;
+            justify-content: space-between;
             margin-top: 12px;
+        }
+        .links-row a {
             color: #e94560;
             text-decoration: none;
             font-size: 0.85rem;
         }
-        .file-manager-link:hover { text-decoration: underline; }
+        .links-row a:hover { text-decoration: underline; }
+        .version-link {
+            display: block;
+            margin-top: 8px;
+            color: #e94560;
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .version-link:hover { text-decoration: underline; }
         .folder-list { display: flex; flex-wrap: wrap; gap: 8px; }
         .folder-btn {
             background: #0f3460;
@@ -112,7 +134,10 @@
 </head>
 <body>
     <div class="container">
-        <h1>Slideshow Control</h1>
+        <div class="header">
+            <h1>AIDE - slideshow</h1>
+            <a href="/about" class="about-link">About</a>
+        </div>
 
         <div class="status-card">
             <div class="status-row">
@@ -168,10 +193,10 @@
             <div class="folder-list" id="folder-list">
                 <button class="folder-btn" onclick="clearFilter()">All</button>
             </div>
-            <a id="file-manager-link" href="#" target="_blank" class="file-manager-link">Dateiverwaltung öffnen</a>
-            <a href="/prepare" class="file-manager-link">Image Preparation</a>
-            <a href="/update" class="file-manager-link">System Update</a>
-            <a href="/about" class="file-manager-link">About / Documentation</a>
+            <div class="links-row">
+                <a id="file-manager-link" href="#" target="_blank">File Manager</a>
+                <a href="/prepare">Image Preparation</a>
+            </div>
         </div>
 
         <div class="status-card" id="version-card" style="margin-top: 20px;">
@@ -183,6 +208,7 @@
                 <span class="status-label">Update</span>
                 <a href="/update" class="status-value" style="color: #60a5fa; text-decoration: none;">Available</a>
             </div>
+            <a href="/update" class="version-link">System Update</a>
         </div>
 
         <p class="refresh-note">Auto-refreshes every 5 seconds</p>
