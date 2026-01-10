@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>System Update</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 500px; margin: 0 auto; }
+        h1 {
+            text-align: center;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #e94560;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-bottom: 20px;
+            color: #888;
+            text-decoration: none;
+        }
+        .back-link:hover { color: #e94560; }
+        .card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            font-size: 1rem;
+            color: #888;
+            margin-bottom: 15px;
+        }
+        .version-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .version-display:last-child { border-bottom: none; }
+        .version-label { color: #888; }
+        .version-value { font-weight: 600; font-size: 1.1rem; }
+        .version-value.current { color: #4ade80; }
+        .version-value.available { color: #60a5fa; }
+        .version-value.ahead { color: #fbbf24; }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .status-badge.up-to-date { background: #166534; color: #4ade80; }
+        .status-badge.update-available { background: #1e40af; color: #60a5fa; }
+        .status-badge.local-ahead { background: #854d0e; color: #fbbf24; }
+        .status-badge.checking { background: #374151; color: #9ca3af; }
+        .status-badge.downloading { background: #1e40af; color: #60a5fa; }
+        .status-badge.staged { background: #166534; color: #4ade80; }
+        .status-badge.error { background: #991b1b; color: #fca5a5; }
+        .status-badge.disabled { background: #991b1b; color: #fca5a5; }
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        button {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 15px 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        button:hover:not(:disabled) { background: #ff6b6b; transform: scale(1.01); }
+        button:active:not(:disabled) { transform: scale(0.99); }
+        button:disabled {
+            background: #374151;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        button.secondary { background: #0f3460; }
+        button.secondary:hover:not(:disabled) { background: #1a4a7a; }
+        button.danger { background: #991b1b; }
+        button.danger:hover:not(:disabled) { background: #b91c1c; }
+        .icon { font-size: 1.2rem; }
+        .message {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        .message.info { background: rgba(96, 165, 250, 0.2); border: 1px solid #60a5fa; }
+        .message.success { background: rgba(74, 222, 128, 0.2); border: 1px solid #4ade80; }
+        .message.warning { background: rgba(251, 191, 36, 0.2); border: 1px solid #fbbf24; }
+        .message.error { background: rgba(248, 113, 113, 0.2); border: 1px solid #f87171; }
+        .details {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 10px;
+        }
+        .details code {
+            background: rgba(0,0,0,0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">&larr; Back to Control Panel</a>
+        <h1>System Update</h1>
+
+        <div id="alert-container"></div>
+
+        <div class="card">
+            <h2>Version Information</h2>
+            <div class="version-display">
+                <span class="version-label">Current Version</span>
+                <span class="version-value current" id="current-version">--</span>
+            </div>
+            <div class="version-display">
+                <span class="version-label">Available Version</span>
+                <span class="version-value" id="available-version">--</span>
+            </div>
+            <div class="version-display">
+                <span class="version-label">Status</span>
+                <span id="update-status"><span class="status-badge checking">Loading...</span></span>
+            </div>
+            <div class="version-display" id="last-check-row">
+                <span class="version-label">Last Check</span>
+                <span class="version-value" id="last-check">--</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Actions</h2>
+            <div class="actions">
+                <button id="btn-check" onclick="checkForUpdates()">
+                    <span class="icon">🔍</span> Check for Updates
+                </button>
+                <button id="btn-download" onclick="downloadUpdate()" class="secondary hidden">
+                    <span class="icon">📥</span> Download Update
+                </button>
+                <button id="btn-apply" onclick="applyUpdate()" class="hidden">
+                    <span class="icon">🚀</span> Install Update & Restart
+                </button>
+                <button id="btn-rollback" onclick="rollback()" class="danger hidden">
+                    <span class="icon">↩️</span> Rollback to Previous Version
+                </button>
+                <button id="btn-enable" onclick="enableUpdates()" class="secondary hidden">
+                    <span class="icon">🔓</span> Re-enable Updates
+                </button>
+            </div>
+        </div>
+
+        <div class="card" id="source-info">
+            <h2>Update Source</h2>
+            <div class="details">
+                Repository: <code id="source-repo">--</code><br>
+                Branch: <code id="source-branch">--</code>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let status = null;
+        let isLoading = false;
+
+        function showAlert(message, type = 'info') {
+            const container = document.getElementById('alert-container');
+            container.innerHTML = `<div class="message ${type}">${message}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+
+        function setLoading(buttonId, loading) {
+            const btn = document.getElementById(buttonId);
+            if (loading) {
+                btn.disabled = true;
+                btn.dataset.originalText = btn.innerHTML;
+                btn.innerHTML = '<span class="loading"></span> Please wait...';
+            } else {
+                btn.disabled = false;
+                if (btn.dataset.originalText) {
+                    btn.innerHTML = btn.dataset.originalText;
+                }
+            }
+        }
+
+        function formatDate(isoString) {
+            if (!isoString) return '--';
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+
+        function updateUI() {
+            if (!status) return;
+
+            // Version display
+            document.getElementById('current-version').textContent = status.current_version || '--';
+            document.getElementById('available-version').textContent = status.available_version || '--';
+            document.getElementById('last-check').textContent = formatDate(status.last_check);
+
+            // Available version styling
+            const availableEl = document.getElementById('available-version');
+            availableEl.className = 'version-value';
+            if (status.version_comparison === 'update_available') {
+                availableEl.classList.add('available');
+            } else if (status.version_comparison === 'local_ahead') {
+                availableEl.classList.add('ahead');
+            }
+
+            // Status badge
+            const statusEl = document.getElementById('update-status');
+            let badgeClass = 'checking';
+            let badgeText = 'Unknown';
+
+            if (status.updates_disabled) {
+                badgeClass = 'disabled';
+                badgeText = 'Disabled (failures)';
+            } else if (status.update_state === 'staged') {
+                badgeClass = 'staged';
+                badgeText = 'Ready to Install';
+            } else if (status.update_state === 'downloading') {
+                badgeClass = 'downloading';
+                badgeText = 'Downloading...';
+            } else if (status.update_state === 'checking') {
+                badgeClass = 'checking';
+                badgeText = 'Checking...';
+            } else if (status.pending_verification) {
+                badgeClass = 'checking';
+                badgeText = 'Verifying...';
+            } else if (status.version_comparison === 'update_available') {
+                badgeClass = 'update-available';
+                badgeText = 'Update Available';
+            } else if (status.version_comparison === 'local_ahead') {
+                badgeClass = 'local-ahead';
+                badgeText = 'Development Mode';
+            } else if (status.version_comparison === 'up_to_date') {
+                badgeClass = 'up-to-date';
+                badgeText = 'Up to Date';
+            }
+
+            statusEl.innerHTML = `<span class="status-badge ${badgeClass}">${badgeText}</span>`;
+
+            // Button visibility
+            document.getElementById('btn-check').classList.remove('hidden');
+            document.getElementById('btn-download').classList.toggle('hidden',
+                !(status.update_available && status.update_state === 'idle'));
+            document.getElementById('btn-apply').classList.toggle('hidden',
+                status.update_state !== 'staged');
+            document.getElementById('btn-rollback').classList.toggle('hidden',
+                !status.can_rollback);
+            document.getElementById('btn-enable').classList.toggle('hidden',
+                !status.updates_disabled);
+
+            // Source info
+            if (status.source) {
+                document.getElementById('source-repo').textContent = status.source.repo || '--';
+                document.getElementById('source-branch').textContent = status.source.branch || '--';
+            }
+        }
+
+        async function refreshStatus() {
+            try {
+                const res = await fetch('/api/update/status');
+                status = await res.json();
+                updateUI();
+            } catch (e) {
+                console.error('Status error:', e);
+            }
+        }
+
+        async function checkForUpdates() {
+            setLoading('btn-check', true);
+            try {
+                const res = await fetch('/api/update/check', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(data.message, data.update_available ? 'info' : 'success');
+                } else {
+                    showAlert(data.error || 'Check failed', 'error');
+                }
+                await refreshStatus();
+            } catch (e) {
+                showAlert('Network error: ' + e.message, 'error');
+            }
+            setLoading('btn-check', false);
+        }
+
+        async function downloadUpdate() {
+            setLoading('btn-download', true);
+            try {
+                const res = await fetch('/api/update/download', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    if (data.errors && data.errors.length > 0) {
+                        showAlert('Downloaded with warnings: ' + data.errors.join(', '), 'warning');
+                    }
+                } else {
+                    showAlert(data.error || 'Download failed', 'error');
+                }
+                await refreshStatus();
+            } catch (e) {
+                showAlert('Network error: ' + e.message, 'error');
+            }
+            setLoading('btn-download', false);
+        }
+
+        async function applyUpdate() {
+            if (!confirm('This will install the update and restart the service. Continue?')) {
+                return;
+            }
+            setLoading('btn-apply', true);
+            try {
+                const res = await fetch('/api/update/apply', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert('Update applied! Service is restarting...', 'success');
+                    // Wait a bit then try to reconnect
+                    setTimeout(() => {
+                        showAlert('Reconnecting...', 'info');
+                        setTimeout(() => location.reload(), 3000);
+                    }, 5000);
+                } else {
+                    showAlert(data.error || 'Apply failed', 'error');
+                    await refreshStatus();
+                }
+            } catch (e) {
+                showAlert('Network error (service may be restarting): ' + e.message, 'warning');
+                setTimeout(() => location.reload(), 5000);
+            }
+            setLoading('btn-apply', false);
+        }
+
+        async function rollback() {
+            if (!confirm('This will restore the previous version and restart. Continue?')) {
+                return;
+            }
+            setLoading('btn-rollback', true);
+            try {
+                const res = await fetch('/api/update/rollback', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    setTimeout(() => location.reload(), 5000);
+                } else {
+                    showAlert(data.error || 'Rollback failed', 'error');
+                    await refreshStatus();
+                }
+            } catch (e) {
+                showAlert('Network error: ' + e.message, 'error');
+            }
+            setLoading('btn-rollback', false);
+        }
+
+        async function enableUpdates() {
+            setLoading('btn-enable', true);
+            try {
+                const res = await fetch('/api/update/enable', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                } else {
+                    showAlert(data.error || 'Failed', 'error');
+                }
+                await refreshStatus();
+            } catch (e) {
+                showAlert('Network error: ' + e.message, 'error');
+            }
+            setLoading('btn-enable', false);
+        }
+
+        // Initial load
+        refreshStatus();
+
+        // Auto-refresh every 10 seconds
+        setInterval(refreshStatus, 10000);
+    </script>
+</body>
+</html>

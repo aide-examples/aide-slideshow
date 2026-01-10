@@ -1240,6 +1240,353 @@ class UpdateManager:
             self._save_state()
             return {"success": False, "error": str(e)}
 
+    def download_update(self):
+        """
+        Download update files from GitHub and stage them.
+
+        Downloads all updateable files to .update/staging/ directory
+        and verifies checksums if available.
+
+        Returns:
+            dict with download results
+        """
+        import urllib.request
+        import urllib.error
+        import hashlib
+        import shutil
+
+        if not self.config.get("enabled", True):
+            return {"success": False, "error": "Updates are disabled in config"}
+
+        if self._state.get("updates_disabled", False):
+            return {"success": False, "error": "Updates disabled due to repeated failures"}
+
+        # Check if update is available
+        available = self._state.get("available_version")
+        local = get_local_version()
+        if not available or compare_versions(local, available) != 1:
+            return {"success": False, "error": "No update available to download"}
+
+        source = self.config.get("source", {})
+        repo = source.get("repo", "aide-examples/aide-slideshow")
+        branch = source.get("branch", "main")
+        base_url = f"https://raw.githubusercontent.com/{repo}/{branch}/app"
+
+        # Files to download (relative to app/)
+        files_to_update = [
+            "VERSION",
+            "slideshow.py",
+            "imgPrepare.py",
+            "README.md",
+            "static/index.html",
+            "static/prepare.html",
+            "static/about.html",
+            "static/update.html",
+        ]
+
+        # Prepare staging directory
+        staging_dir = os.path.join(self.state_dir, "staging")
+        try:
+            if os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir)
+            os.makedirs(staging_dir, exist_ok=True)
+            os.makedirs(os.path.join(staging_dir, "static"), exist_ok=True)
+        except OSError as e:
+            return {"success": False, "error": f"Cannot create staging directory: {e}"}
+
+        self._state["update_state"] = "downloading"
+        self._save_state()
+
+        downloaded = []
+        errors = []
+        checksums = {}
+
+        # First, try to download CHECKSUMS.sha256 if it exists
+        checksums_url = f"{base_url}/CHECKSUMS.sha256"
+        try:
+            req = urllib.request.Request(checksums_url, headers={"User-Agent": "AIDE-Slideshow-Updater"})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                checksums_content = response.read().decode('utf-8')
+                for line in checksums_content.strip().split('\n'):
+                    if line.strip():
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            checksums[parts[1]] = parts[0]
+        except urllib.error.HTTPError:
+            pass  # Checksums file is optional
+        except Exception:
+            pass
+
+        # Download each file
+        for filepath in files_to_update:
+            url = f"{base_url}/{filepath}"
+            staging_path = os.path.join(staging_dir, filepath)
+
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "AIDE-Slideshow-Updater"})
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    content = response.read()
+
+                # Verify checksum if available
+                if filepath in checksums:
+                    actual_hash = hashlib.sha256(content).hexdigest()
+                    if actual_hash != checksums[filepath]:
+                        errors.append(f"{filepath}: checksum mismatch")
+                        continue
+
+                # Write to staging
+                with open(staging_path, 'wb') as f:
+                    f.write(content)
+                downloaded.append(filepath)
+
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    # File doesn't exist in remote, skip it
+                    pass
+                else:
+                    errors.append(f"{filepath}: HTTP {e.code}")
+            except Exception as e:
+                errors.append(f"{filepath}: {str(e)}")
+
+        # Check if we got the essential files
+        if "VERSION" not in downloaded or "slideshow.py" not in downloaded:
+            self._state["update_state"] = "idle"
+            self._save_state()
+            return {
+                "success": False,
+                "error": "Failed to download essential files",
+                "downloaded": downloaded,
+                "errors": errors
+            }
+
+        # Update state
+        self._state["update_state"] = "staged"
+        self._state["staged_version"] = available
+        self._save_state()
+
+        return {
+            "success": True,
+            "message": f"Update {available} staged successfully",
+            "staged_version": available,
+            "downloaded": downloaded,
+            "errors": errors if errors else None
+        }
+
+    def apply_update(self):
+        """
+        Apply a staged update.
+
+        1. Backs up current app/ files to .update/backup/
+        2. Copies staged files to app/
+        3. Sets pending_verification flag
+        4. Triggers service restart
+
+        Returns:
+            dict with apply results
+        """
+        import shutil
+
+        if self._state.get("update_state") != "staged":
+            return {"success": False, "error": "No staged update to apply"}
+
+        staged_version = self._state.get("staged_version")
+        if not staged_version:
+            return {"success": False, "error": "Staged version unknown"}
+
+        staging_dir = os.path.join(self.state_dir, "staging")
+        backup_dir = os.path.join(self.state_dir, "backup")
+
+        if not os.path.exists(staging_dir):
+            return {"success": False, "error": "Staging directory not found"}
+
+        # Create backup of current files
+        try:
+            if os.path.exists(backup_dir):
+                shutil.rmtree(backup_dir)
+            os.makedirs(backup_dir, exist_ok=True)
+            os.makedirs(os.path.join(backup_dir, "static"), exist_ok=True)
+
+            # Backup current files
+            current_version = get_local_version()
+            for item in os.listdir(staging_dir):
+                src = os.path.join(SCRIPT_DIR, item)
+                dst = os.path.join(backup_dir, item)
+                if os.path.exists(src):
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
+
+            self._state["backup_version"] = current_version
+
+        except OSError as e:
+            return {"success": False, "error": f"Backup failed: {e}"}
+
+        # Apply staged files
+        self._state["update_state"] = "applying"
+        self._save_state()
+
+        try:
+            for item in os.listdir(staging_dir):
+                src = os.path.join(staging_dir, item)
+                dst = os.path.join(SCRIPT_DIR, item)
+
+                if os.path.isdir(src):
+                    # For directories (like static/), copy contents
+                    if os.path.exists(dst):
+                        # Copy individual files to preserve any extra files
+                        for subitem in os.listdir(src):
+                            shutil.copy2(
+                                os.path.join(src, subitem),
+                                os.path.join(dst, subitem)
+                            )
+                    else:
+                        shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+
+        except OSError as e:
+            # Try to rollback
+            self._state["update_state"] = "idle"
+            self._save_state()
+            return {"success": False, "error": f"Apply failed: {e}"}
+
+        # Update state for verification
+        self._state["update_state"] = "verifying"
+        self._state["pending_verification"] = True
+        self._state["current_version"] = staged_version
+        self._save_state()
+
+        # Trigger restart (non-blocking)
+        restart_result = self._trigger_restart()
+
+        return {
+            "success": True,
+            "message": f"Update {staged_version} applied, restarting service",
+            "applied_version": staged_version,
+            "backup_version": self._state.get("backup_version"),
+            "restart": restart_result
+        }
+
+    def _trigger_restart(self):
+        """Trigger service restart via systemctl."""
+        try:
+            # Use systemctl to restart ourselves
+            # This is safe because systemd will wait for the current request to complete
+            result = subprocess.Popen(
+                ["sudo", "systemctl", "restart", "slideshow"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return {"triggered": True}
+        except Exception as e:
+            return {"triggered": False, "error": str(e)}
+
+    def rollback(self):
+        """
+        Rollback to the backup version.
+
+        Returns:
+            dict with rollback results
+        """
+        import shutil
+
+        backup_dir = os.path.join(self.state_dir, "backup")
+        backup_version = self._state.get("backup_version")
+
+        if not backup_version:
+            return {"success": False, "error": "No backup version available"}
+
+        if not os.path.exists(backup_dir):
+            return {"success": False, "error": "Backup directory not found"}
+
+        # Restore backup files
+        try:
+            for item in os.listdir(backup_dir):
+                src = os.path.join(backup_dir, item)
+                dst = os.path.join(SCRIPT_DIR, item)
+
+                if os.path.isdir(src):
+                    if os.path.exists(dst):
+                        for subitem in os.listdir(src):
+                            shutil.copy2(
+                                os.path.join(src, subitem),
+                                os.path.join(dst, subitem)
+                            )
+                    else:
+                        shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+
+        except OSError as e:
+            return {"success": False, "error": f"Rollback failed: {e}"}
+
+        # Update state
+        self._state["current_version"] = backup_version
+        self._state["update_state"] = "idle"
+        self._state["pending_verification"] = False
+        self._state["consecutive_failures"] = self._state.get("consecutive_failures", 0) + 1
+
+        # Disable updates after too many failures
+        if self._state["consecutive_failures"] >= 2:
+            self._state["updates_disabled"] = True
+
+        self._save_state()
+
+        # Trigger restart
+        restart_result = self._trigger_restart()
+
+        return {
+            "success": True,
+            "message": f"Rolled back to version {backup_version}",
+            "restored_version": backup_version,
+            "consecutive_failures": self._state["consecutive_failures"],
+            "updates_disabled": self._state.get("updates_disabled", False),
+            "restart": restart_result
+        }
+
+    def confirm_update(self):
+        """
+        Confirm that the update is working (called after successful startup).
+
+        Clears the pending_verification flag and resets failure counter.
+        """
+        if not self._state.get("pending_verification"):
+            return {"success": False, "error": "No pending verification"}
+
+        self._state["pending_verification"] = False
+        self._state["consecutive_failures"] = 0
+        self._state["update_state"] = "idle"
+        import datetime
+        self._state["last_update"] = datetime.datetime.now().isoformat()
+        self._save_state()
+
+        # Clean up staging directory
+        staging_dir = os.path.join(self.state_dir, "staging")
+        if os.path.exists(staging_dir):
+            import shutil
+            try:
+                shutil.rmtree(staging_dir)
+            except OSError:
+                pass
+
+        return {
+            "success": True,
+            "message": "Update verified and confirmed",
+            "version": self._state.get("current_version")
+        }
+
+    def enable_updates(self):
+        """Re-enable updates after they were disabled due to failures."""
+        self._state["updates_disabled"] = False
+        self._state["consecutive_failures"] = 0
+        self._save_state()
+
+        return {
+            "success": True,
+            "message": "Updates re-enabled"
+        }
+
 
 # Global update manager instance (initialized in main)
 update_manager = None
@@ -1567,6 +1914,11 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                     self.send_static_file('about.html')
                     return
 
+                # Serve update page
+                if path == '/update' or path == '/update.html':
+                    self.send_static_file('update.html')
+                    return
+
                 # Serve README.md content as JSON (for the about page)
                 if path == '/readme':
                     self.send_json({"content": load_readme()})
@@ -1693,6 +2045,10 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                             "GET /api/prepare/cancel - Cancel running job",
                             "GET /api/update/status - Update system status",
                             "POST /api/update/check - Check for updates on GitHub",
+                            "POST /api/update/download - Download and stage update",
+                            "POST /api/update/apply - Apply staged update and restart",
+                            "POST /api/update/rollback - Rollback to backup version",
+                            "POST /api/update/enable - Re-enable updates after failures",
                         ]
                     })
 
@@ -1713,6 +2069,34 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                 if path == '/api/update/check':
                     if update_manager:
                         result = update_manager.check_for_updates()
+                        self.send_json(result)
+                    else:
+                        self.send_json({"error": "Update manager not initialized"}, 500)
+
+                elif path == '/api/update/download':
+                    if update_manager:
+                        result = update_manager.download_update()
+                        self.send_json(result)
+                    else:
+                        self.send_json({"error": "Update manager not initialized"}, 500)
+
+                elif path == '/api/update/apply':
+                    if update_manager:
+                        result = update_manager.apply_update()
+                        self.send_json(result)
+                    else:
+                        self.send_json({"error": "Update manager not initialized"}, 500)
+
+                elif path == '/api/update/rollback':
+                    if update_manager:
+                        result = update_manager.rollback()
+                        self.send_json(result)
+                    else:
+                        self.send_json({"error": "Update manager not initialized"}, 500)
+
+                elif path == '/api/update/enable':
+                    if update_manager:
+                        result = update_manager.enable_updates()
                         self.send_json(result)
                     else:
                         self.send_json({"error": "Update manager not initialized"}, 500)
@@ -2236,6 +2620,19 @@ def main():
     update_config = config.get("update", {})
     update_manager = UpdateManager(update_config)
     print(f"Version: {get_local_version()}")
+
+    # Check if we need to verify a pending update
+    if update_manager._state.get("pending_verification"):
+        print("Update pending verification - will confirm after 60s stable operation")
+
+        def delayed_confirm():
+            time.sleep(60)
+            if update_manager._state.get("pending_verification"):
+                result = update_manager.confirm_update()
+                print(f"Update verification: {result.get('message', 'done')}")
+
+        confirm_thread = threading.Thread(target=delayed_confirm, daemon=True)
+        confirm_thread.start()
 
     # Create slideshow
     app = Slideshow(config)

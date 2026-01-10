@@ -170,7 +170,19 @@
             </div>
             <a id="file-manager-link" href="#" target="_blank" class="file-manager-link">Dateiverwaltung öffnen</a>
             <a href="/prepare" class="file-manager-link">Image Preparation</a>
+            <a href="/update" class="file-manager-link">System Update</a>
             <a href="/about" class="file-manager-link">About / Documentation</a>
+        </div>
+
+        <div class="status-card" id="version-card" style="margin-top: 20px;">
+            <div class="status-row">
+                <span class="status-label">Version</span>
+                <span class="status-value" id="version-display">--</span>
+            </div>
+            <div class="status-row" id="update-row" style="display: none;">
+                <span class="status-label">Update</span>
+                <a href="/update" class="status-value" style="color: #60a5fa; text-decoration: none;">Available</a>
+            </div>
         </div>
 
         <p class="refresh-note">Auto-refreshes every 5 seconds</p>
@@ -269,12 +281,30 @@
         document.getElementById('file-manager-link').href =
             window.location.protocol + '//' + window.location.hostname + ':8081';
 
+        async function loadVersion() {
+            try {
+                const res = await fetch('/api/update/status');
+                const data = await res.json();
+                document.getElementById('version-display').textContent = data.current_version || '--';
+                const updateRow = document.getElementById('update-row');
+                if (data.update_available) {
+                    updateRow.style.display = 'flex';
+                } else {
+                    updateRow.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Version error:', e);
+            }
+        }
+
         // Initial load
         refreshStatus();
         loadFolders();
+        loadVersion();
 
         // Auto-refresh every 5 seconds
         setInterval(refreshStatus, 5000);
+        setInterval(loadVersion, 30000);  // Check version every 30s
     </script>
 </body>
 </html>
