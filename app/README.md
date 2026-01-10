@@ -970,15 +970,15 @@ SD Card Layout:
 │ Partition 1: /boot/firmware (FAT32, ~512MB)         │
 ├─────────────────────────────────────────────────────┤
 │ Partition 2: / (ext4, ~4-8GB) → READ-ONLY           │
-│   - System, Python, slideshow code                  │
-│   - config.json, static/, sample_images/            │
+│   - System, Python, config.json                     │
 ├─────────────────────────────────────────────────────┤
 │ Partition 3: /data (ext4, remaining) → READ-WRITE   │
 │   - Images via symlink: img → /data/img             │
+│   - App code via symlink: app → /data/app           │
 └─────────────────────────────────────────────────────┘
 ```
 
-**Advantage:** The slideshow uses relative paths (`img/show`, `img/upload`). A symlink makes the transition transparent - no code changes required.
+**Advantage:** The slideshow uses relative paths. Symlinks make the transition transparent - no code changes required. The `app` symlink also enables remote updates on a read-only root filesystem.
 
 ## Setup
 
@@ -1066,17 +1066,29 @@ sudo mount /data
 sudo chown pi:pi /data
 ```
 
-### 4. Move Images and Create Symlink
+### 4. Move Data and Create Symlinks
 
 ```bash
 # Move images to new partition
-sudo mv /home/pi/slideshow/img /data/img
+sudo mv /home/pi/aide-slideshow/img /data/img
 
-# Create symlink
-ln -s /data/img /home/pi/slideshow/img
+# Move app code to new partition (for remote updates)
+sudo cp -r /home/pi/aide-slideshow/app /data/app
+
+# Create symlinks
+rm -rf /home/pi/aide-slideshow/app
+ln -s /data/img /home/pi/aide-slideshow/img
+ln -s /data/app /home/pi/aide-slideshow/app
+
+# Create update state directory
+mkdir -p /data/.update/{backup,staging}
+
+# Set permissions
+sudo chown -R pi:pi /data
 
 # Verify
-ls -la /home/pi/slideshow/img  # Should point to /data/img
+ls -la /home/pi/aide-slideshow/img  # Should point to /data/img
+ls -la /home/pi/aide-slideshow/app  # Should point to /data/app
 ```
 
 ### 5. tmpfs for Temporary Files
@@ -1149,8 +1161,9 @@ touch /test.txt  # Expected: "Read-only file system"
 # /data should be writable
 touch /data/test.txt && rm /data/test.txt  # Should work
 
-# Verify symlink
-ls -la ~/slideshow/img  # Points to /data/img
+# Verify symlinks
+ls -la ~/aide-slideshow/img  # Points to /data/img
+ls -la ~/aide-slideshow/app  # Points to /data/app
 
 # Test slideshow
 sudo systemctl restart slideshow
