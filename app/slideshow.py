@@ -1058,7 +1058,12 @@ def generate_welcome_image(url, output_path, width=1920, height=1080):
 
     # Scale QR code to reasonable size (about 1/3 of height)
     qr_size = min(height // 3, 360)
-    qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.NEAREST)
+    # Use NEAREST for older Pillow versions (Resampling added in 9.1.0)
+    try:
+        resample = Image.Resampling.NEAREST
+    except AttributeError:
+        resample = Image.NEAREST
+    qr_img = qr_img.resize((qr_size, qr_size), resample)
 
     # Position QR code (center-left area)
     qr_x = width // 4 - qr_size // 2
