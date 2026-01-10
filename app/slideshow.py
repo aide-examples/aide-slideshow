@@ -1272,17 +1272,25 @@ class UpdateManager:
         branch = source.get("branch", "main")
         base_url = f"https://raw.githubusercontent.com/{repo}/{branch}/app"
 
-        # Files to download (relative to app/)
-        files_to_update = [
-            "VERSION",
-            "slideshow.py",
-            "imgPrepare.py",
-            "README.md",
-            "static/index.html",
-            "static/prepare.html",
-            "static/about.html",
-            "static/update.html",
-        ]
+        # Build list of files to update dynamically from local app/ directory
+        # This way, new files are automatically included in updates
+        files_to_update = []
+        for item in os.listdir(SCRIPT_DIR):
+            item_path = os.path.join(SCRIPT_DIR, item)
+            if os.path.isfile(item_path):
+                # Include Python files, VERSION, README, and other text files
+                if item.endswith(('.py', '.md', '.txt', '.json')) or item == 'VERSION':
+                    files_to_update.append(item)
+            elif os.path.isdir(item_path) and item == 'static':
+                # Include static files (html, css, js)
+                for static_item in os.listdir(item_path):
+                    if static_item.endswith(('.html', '.css', '.js')):
+                        files_to_update.append(f"static/{static_item}")
+
+        # Ensure essential files are in the list
+        for essential in ['VERSION', 'slideshow.py']:
+            if essential not in files_to_update:
+                files_to_update.append(essential)
 
         # Prepare staging directory
         staging_dir = os.path.join(self.state_dir, "staging")
@@ -1290,7 +1298,10 @@ class UpdateManager:
             if os.path.exists(staging_dir):
                 shutil.rmtree(staging_dir)
             os.makedirs(staging_dir, exist_ok=True)
-            os.makedirs(os.path.join(staging_dir, "static"), exist_ok=True)
+            # Create subdirectories as needed
+            subdirs = set(os.path.dirname(f) for f in files_to_update if '/' in f)
+            for subdir in subdirs:
+                os.makedirs(os.path.join(staging_dir, subdir), exist_ok=True)
         except OSError as e:
             return {"success": False, "error": f"Cannot create staging directory: {e}"}
 

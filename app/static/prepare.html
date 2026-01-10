@@ -4,182 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Image Preparation</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #fff;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container { max-width: 500px; margin: 0 auto; }
-        h1 {
-            text-align: center;
-            font-size: 1.5rem;
-            margin-bottom: 20px;
-            color: #e94560;
-        }
-        .card {
-            background: rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        .card h3 {
-            color: #888;
-            font-size: 0.9rem;
-            margin-bottom: 12px;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        .form-group label {
-            display: block;
-            color: #aaa;
-            font-size: 0.85rem;
-            margin-bottom: 5px;
-        }
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 8px;
-            background: rgba(0,0,0,0.3);
-            color: #fff;
-            font-size: 0.95rem;
-        }
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: #e94560;
-        }
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-        .checkbox-group input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-        }
-        .checkbox-group label {
-            color: #ccc;
-            font-size: 0.9rem;
-        }
-        button {
-            background: #e94560;
-            color: #fff;
-            border: none;
-            border-radius: 10px;
-            padding: 15px 20px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            width: 100%;
-        }
-        button:hover { background: #ff6b6b; }
-        button:active { transform: scale(0.98); }
-        button:disabled { background: #444; cursor: not-allowed; }
-        button.secondary { background: #0f3460; }
-        button.secondary:hover { background: #1a4a7a; }
-        button.danger { background: #b91c1c; }
-        button.danger:hover { background: #dc2626; }
-        .btn-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-        .progress-card {
-            display: none;
-        }
-        .progress-card.active {
-            display: block;
-        }
-        .progress-bar-container {
-            background: rgba(0,0,0,0.3);
-            border-radius: 10px;
-            height: 24px;
-            overflow: hidden;
-            margin: 15px 0;
-        }
-        .progress-bar {
-            background: linear-gradient(90deg, #e94560, #ff6b6b);
-            height: 100%;
-            width: 0%;
-            transition: width 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        .progress-stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            text-align: center;
-        }
-        .stat-box {
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-            padding: 10px;
-        }
-        .stat-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-        .stat-value.processed { color: #4ade80; }
-        .stat-value.exists { color: #fbbf24; }
-        .stat-value.error { color: #f87171; }
-        .stat-label {
-            font-size: 0.75rem;
-            color: #888;
-        }
-        .current-file {
-            font-size: 0.8rem;
-            color: #888;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-top: 10px;
-        }
-        .nav-links {
-            text-align: center;
-            margin-top: 15px;
-        }
-        .nav-links a {
-            color: #e94560;
-            text-decoration: none;
-            font-size: 0.85rem;
-            margin: 0 10px;
-        }
-        .nav-links a:hover { text-decoration: underline; }
-        .help-text {
-            font-size: 0.75rem;
-            color: #666;
-            margin-top: 5px;
-        }
-        .status-message {
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            font-size: 0.9rem;
-        }
-        .status-message.success { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
-        .status-message.error { background: rgba(248, 113, 113, 0.2); color: #f87171; }
-        .status-message.info { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Image Preparation</h1>
+    <div class="container wide">
+        <h1 style="text-align: center; margin-bottom: 20px;">Image Preparation</h1>
 
         <div id="message-area"></div>
 
@@ -295,7 +124,7 @@
                 </div>
             </div>
             <div class="current-file" id="current-file">Waiting...</div>
-            <button onclick="cancelJob()" class="danger" id="cancel-btn" style="margin-top: 15px;">Cancel</button>
+            <button onclick="cancelJob()" class="danger wide" id="cancel-btn" style="margin-top: 15px;">Cancel</button>
         </div>
 
         <div class="nav-links">
@@ -330,7 +159,7 @@
 
         function showMessage(text, type = 'info') {
             const area = document.getElementById('message-area');
-            area.innerHTML = `<div class="status-message ${type}">${text}</div>`;
+            area.innerHTML = `<div class="message ${type}">${text}</div>`;
             setTimeout(() => area.innerHTML = '', 5000);
         }
 
