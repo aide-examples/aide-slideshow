@@ -1510,7 +1510,6 @@ class UpdateManager:
             if os.path.exists(backup_dir):
                 shutil.rmtree(backup_dir)
             os.makedirs(backup_dir, exist_ok=True)
-            os.makedirs(os.path.join(backup_dir, "static"), exist_ok=True)
 
             # Backup current files
             current_version = get_local_version()
@@ -1519,7 +1518,7 @@ class UpdateManager:
                 dst = os.path.join(backup_dir, item)
                 if os.path.exists(src):
                     if os.path.isdir(src):
-                        shutil.copytree(src, dst)
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
                     else:
                         shutil.copy2(src, dst)
 
