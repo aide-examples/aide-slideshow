@@ -577,12 +577,19 @@ pip install samsungtvws
 
 # For MQTT motion sensor
 pip install paho-mqtt
+
+# For welcome screen QR code generation
+pip install "qrcode[pil]"
 ```
 
-**Note:** On Raspberry Pi, you can also install Pillow via apt:
+**System-wide installation (without venv):**
+
+On Raspberry Pi or Debian/Ubuntu, you can install Python packages via apt instead of pip:
 ```bash
-sudo apt install python3-pil
+sudo apt install python3-pil python3-qrcode
 ```
+
+This avoids the need for a virtual environment and integrates better with system packages.
 
 ## 3. Deploy Files
 
@@ -615,6 +622,30 @@ sudo systemctl daemon-reload
 sudo systemctl enable slideshow
 sudo systemctl start slideshow
 ```
+
+---
+
+# Welcome Screen
+
+On startup, the slideshow displays a welcome screen for 20 seconds before showing images. This screen contains:
+
+- A QR code linking to the web control UI
+- The URL in text form
+- Instructions for the user
+
+This allows guests to easily connect to and control the slideshow from their mobile device without needing to know the IP address.
+
+**Requirements:** The `qrcode` library is needed to generate the welcome image:
+```bash
+pip install "qrcode[pil]"
+```
+
+If the library is not installed, the welcome screen is skipped and the slideshow starts directly.
+
+**How it works:**
+- The welcome image is generated once and cached in `app/welcome/`
+- If the server URL changes (e.g., new IP address), a new image is automatically generated
+- The image is regenerated only when needed (lazy generation)
 
 ---
 
@@ -1062,66 +1093,49 @@ ls -la /home/pi/img  # Should point to /data/img
 ls -la /home/pi/app  # Should point to /data/app
 ```
 
-### 5. tmpfs for Temporary Files
+### 5. Enable Read-Only Filesystem via raspi-config
 
-Add to `/etc/fstab`:
-
-```fstab
-tmpfs  /tmp      tmpfs  defaults,noatime,nosuid,size=50M  0  0
-tmpfs  /var/log  tmpfs  defaults,noatime,nosuid,size=20M  0  0
-tmpfs  /var/tmp  tmpfs  defaults,noatime,nosuid,size=10M  0  0
-```
-
-### 6. Install and Enable overlayroot
+Use the built-in Raspberry Pi OS overlay filesystem feature:
 
 ```bash
-# Install overlayroot
-sudo apt install overlayroot
-
-# Configure
-sudo nano /etc/overlayroot.conf
+sudo raspi-config
 ```
 
-Set content:
-```
-overlayroot="tmpfs:swap=1,recurse=0"
-```
+Navigate to: **Performance Options → Overlay File System**
 
+1. Select **Yes** to enable the overlay filesystem
+2. Select **Yes** to write-protect the boot partition
+3. Reboot when prompted
+
+After reboot, the root filesystem is write-protected using overlayfs. All write operations go to RAM and are lost after reboot - except on `/data` which remains writable.
+
+**Check status:**
 ```bash
-# Reboot to activate
-sudo reboot
-```
+# Check if overlay is active (0 = enabled)
+sudo raspi-config nonint get_overlay_now
 
-After reboot, the root filesystem is write-protected. All write operations go to RAM and are lost after reboot - except on `/data`.
+# Check if overlay is configured for next boot
+sudo raspi-config nonint get_overlay_conf
+```
 
 ## Maintenance Mode
 
-The overlayroot system works by mounting the real root partition underneath the tmpfs overlay. The `overlayroot-chroot` command gives you direct access to the real (persistent) root filesystem, bypassing the overlay.
-
-**Why changes persist:** When you run `overlayroot-chroot`, you're editing files on the actual SD card partition, not the RAM overlay. These changes are written directly to disk and survive reboots.
+To make permanent changes to the system, temporarily disable the overlay:
 
 ```bash
-# Enter writable chroot environment (writes to real root partition)
-sudo overlayroot-chroot
-
-# System updates
-apt update && apt upgrade
-
-# Update slideshow scripts
-cp /data/new-slideshow.py /home/pi/slideshow/slideshow.py
-cp /data/new-imgPrepare.py /home/pi/slideshow/imgPrepare.py
-
-# Edit configuration
-nano /etc/overlayroot.conf
-
-# Exit chroot - you're back in the overlay environment
-exit
-
-# Reboot to apply changes (loads updated files into new overlay)
-sudo reboot
+sudo raspi-config
 ```
 
-**Important:** After exiting `overlayroot-chroot`, you're back in the RAM overlay. The changes are saved on disk but not yet active. A reboot is required to load the updated files into the new overlay session.
+Navigate to: **Performance Options → Overlay File System → No**
+
+Reboot, make your changes (apt upgrade, config edits, etc.), then re-enable the overlay via raspi-config.
+
+**Alternative (without reboot):** For quick edits, you can remount as writable:
+```bash
+sudo mount -o remount,rw /
+# Make changes...
+sudo mount -o remount,ro /
+```
 
 ## Verification
 

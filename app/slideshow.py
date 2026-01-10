@@ -1022,6 +1022,101 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)                 # parent of app/
 STATIC_DIR = os.path.join(SCRIPT_DIR, "static")
 VERSION_FILE = os.path.join(SCRIPT_DIR, "VERSION")
 UPDATE_STATE_DIR = os.path.join(PROJECT_DIR, ".update")
+WELCOME_DIR = os.path.join(SCRIPT_DIR, "welcome")
+
+
+def url_to_filename(url):
+    """Convert URL to a safe filename."""
+    # Remove protocol and replace special chars
+    safe = url.replace("://", "_").replace("/", "_").replace(":", "_").replace(".", "_")
+    return f"{safe}.png"
+
+
+def generate_welcome_image(url, output_path, width=1920, height=1080):
+    """Generate a welcome image with QR code pointing to the control UI.
+
+    Only imports qrcode library when actually needed (lazy loading).
+    """
+    try:
+        # Lazy import - only load when needed
+        import qrcode
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError as e:
+        print(f"Cannot generate welcome image: {e}")
+        print("Install with: pip install qrcode[pil]")
+        return False
+
+    # Create QR code
+    qr = qrcode.QRCode(version=1, box_size=10, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="white", back_color="black")
+
+    # Create main image (dark background)
+    img = Image.new('RGB', (width, height), color=(20, 20, 30))
+    draw = ImageDraw.Draw(img)
+
+    # Scale QR code to reasonable size (about 1/3 of height)
+    qr_size = min(height // 3, 360)
+    qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.NEAREST)
+
+    # Position QR code (center-left area)
+    qr_x = width // 4 - qr_size // 2
+    qr_y = height // 2 - qr_size // 2
+    img.paste(qr_img, (qr_x, qr_y))
+
+    # Add text - try to use a nice font, fall back to default
+    try:
+        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+        text_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
+        url_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+    except:
+        title_font = ImageFont.load_default()
+        text_font = title_font
+        url_font = title_font
+
+    # Text position (right side of QR code)
+    text_x = width // 2
+    text_y = height // 2 - 80
+
+    # Draw text
+    draw.text((text_x, text_y), "Control the Slideshow", font=title_font, fill=(255, 255, 255))
+    draw.text((text_x, text_y + 70), "Scan the QR code or visit:", font=text_font, fill=(200, 200, 200))
+    draw.text((text_x, text_y + 120), url, font=url_font, fill=(100, 180, 255))
+
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Save image
+    img.save(output_path, "PNG")
+    print(f"Generated welcome image: {output_path}")
+    return True
+
+
+def get_or_create_welcome_image(url):
+    """Get path to welcome image, creating it if needed for this URL."""
+    filename = url_to_filename(url)
+    image_path = os.path.join(WELCOME_DIR, filename)
+
+    # Check if image already exists for this URL
+    if os.path.exists(image_path):
+        return image_path
+
+    # Clean up old welcome images (different URLs)
+    if os.path.exists(WELCOME_DIR):
+        for old_file in os.listdir(WELCOME_DIR):
+            if old_file.endswith('.png'):
+                old_path = os.path.join(WELCOME_DIR, old_file)
+                try:
+                    os.remove(old_path)
+                    print(f"Removed old welcome image: {old_file}")
+                except:
+                    pass
+
+    # Generate new image
+    if generate_welcome_image(url, image_path):
+        return image_path
+    return None
 
 
 def get_local_version():
@@ -1820,20 +1915,15 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         """Get the best URL to reach this server (may be slow due to DNS)."""
         import socket
 
-        # Under WSL2, use localhost (FQDN like corno.localdomain doesn't resolve)
+        hostname = socket.gethostname()
+
+        # Under WSL2, localhost works only on same machine
+        # For LAN access from mobile, user needs Windows IP (see console hint)
         if PLATFORM == 'wsl2':
             return f"http://localhost:{self.port}"
 
-        hostname = socket.gethostname()
+        # Try to get IP address first (works for LAN access from mobile devices)
         try:
-            # Try to get FQDN (fully qualified domain name)
-            fqdn = socket.getfqdn()
-            if fqdn and fqdn != hostname and '.' in fqdn:
-                return f"http://{fqdn}:{self.port}"
-        except:
-            pass
-        try:
-            # Fall back to IP address
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             ip = s.getsockname()[0]
@@ -1841,6 +1931,15 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
             return f"http://{ip}:{self.port}"
         except:
             pass
+
+        try:
+            # Try to get FQDN (fully qualified domain name)
+            fqdn = socket.getfqdn()
+            if fqdn and fqdn != hostname and '.' in fqdn:
+                return f"http://{fqdn}:{self.port}"
+        except:
+            pass
+
         return f"http://{hostname}:{self.port}"
 
     def _print_server_url_async(self):
@@ -1848,6 +1947,8 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         def resolve_and_print():
             url = self._get_server_url()
             print(f"HTTP API server reachable at {url}")
+            if PLATFORM == 'wsl2':
+                print("         (For LAN access from mobile, use your Windows IP instead of localhost)")
         thread = threading.Thread(target=resolve_and_print, daemon=True)
         thread.start()
 
@@ -2537,7 +2638,37 @@ class Slideshow:
                     self.screen.blit(self.current_img, (0, 0))
                     pygame.display.flip()
 
-    def run(self):
+    def show_welcome_screen(self, url, duration=20):
+        """Show welcome screen with QR code for the given duration."""
+        welcome_path = get_or_create_welcome_image(url)
+        if not welcome_path:
+            return
+
+        try:
+            img = pygame.image.load(welcome_path)
+            img = pygame.transform.scale(img, (self.width, self.height)).convert()
+        except Exception as e:
+            print(f"Error loading welcome image: {e}")
+            return
+
+        # Display welcome screen
+        self.screen.blit(img, (0, 0))
+        pygame.display.flip()
+        pygame.event.pump()
+        print(f"Showing welcome screen for {duration}s - {url}")
+
+        # Wait for duration, but stay responsive
+        elapsed = 0
+        while elapsed < duration and self.running:
+            self._handle_pygame_events()
+            time.sleep(0.1)
+            elapsed += 0.1
+
+    def run(self, server_url=None):
+        # Show welcome screen first if we have a server URL
+        if server_url:
+            self.show_welcome_screen(server_url)
+
         while self.running:
             # Process pygame events (essential for desktop mode)
             self._handle_pygame_events()
@@ -2679,10 +2810,12 @@ def main():
 
     # HTTP API
     http_config = rc_config.get("http_api", {})
+    server_url = None
     if http_config.get("enabled", True):
         http_api = HTTPAPIRemoteControl(http_config, app)
         http_api.start()
         remote_controls.append(http_api)
+        server_url = http_api._get_server_url()
 
     # IR Remote
     ir_config = rc_config.get("ir_remote", {})
@@ -2700,9 +2833,9 @@ def main():
     )
     motion_sensor.start()
 
-    # Run slideshow
+    # Run slideshow (with welcome screen if server URL available)
     try:
-        app.run()
+        app.run(server_url=server_url)
     finally:
         # Cleanup
         motion_sensor.stop()
