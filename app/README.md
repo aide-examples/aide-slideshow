@@ -1084,6 +1084,7 @@ ln -s /data/app /home/pi/app
 
 # Create update state directory
 mkdir -p /data/.update/{backup,staging}
+ln -s /data/.update /home/pi/.update
 
 # Set permissions
 sudo chown -R pi:pi /data
