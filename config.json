@@ -65,6 +65,11 @@
                 "filter_2": null,
                 "filter_3": null
             }
+        },
+        "alexa": {
+            "enabled": false,
+            "device_name": "Slideshow",
+            "port": 12340
         }
     }
 }

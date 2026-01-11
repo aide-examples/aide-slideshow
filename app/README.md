@@ -538,9 +538,45 @@ Physical IR remote control.
 }
 ```
 
+### Alexa Voice Control - `"enabled": true`
+
+| Setting | Description |
+|---------|-------------|
+| **Provider** | `alexa` (Fauxmo - WeMo emulation) |
+| **Requirements** | `fauxmo` library, Alexa on same network |
+| **Port** | UDP 1900 (SSDP discovery), TCP 12340 (default) |
+
+**How it works:** Fauxmo emulates a WeMo smart plug. Alexa discovers it as a native device - no skill or cloud account needed.
+
+**Commands:**
+- "Alexa, turn on Slideshow" → Resume playback + Monitor on
+- "Alexa, turn off Slideshow" → Pause + Monitor off
+
+**Setup:**
+```bash
+# Install fauxmo
+pip install fauxmo
+
+# Enable in config.json
+"remote_control": {
+    "alexa": {
+        "enabled": true,
+        "device_name": "Slideshow",
+        "port": 12340
+    }
+}
+
+# Restart slideshow, then say:
+# "Alexa, discover devices"
+```
+
+**Limitations:**
+- On/Off only (WeMo protocol limitation)
+- Requires local network (no remote access)
+- Does not work in WSL2 (UDP multicast issues)
+
 ### Future Providers (Not Yet Implemented)
-- **Alexa Voice Control**: Via fauxmo (WeMo emulation) or Alexa Smart Home skill
-- **Web UI**: Browser-based control panel
+- **Alexa Extended**: Custom Alexa skill for folder selection
 - **Bluetooth**: Bluetooth remote support
 
 ---
@@ -580,6 +616,9 @@ pip install paho-mqtt
 
 # For welcome screen QR code generation
 pip install "qrcode[pil]"
+
+# For Alexa voice control
+pip install fauxmo
 ```
 
 **System-wide installation (without venv):**

@@ -2421,6 +2421,115 @@ class IRRemoteControl(RemoteControlProvider):
             self.execute_action(action)
 
 
+class FauxmoRemoteControl(RemoteControlProvider):
+    """
+    Alexa voice control using Fauxmo (WeMo emulation).
+
+    Alexa sees the slideshow as a smart plug/switch:
+    - "Alexa, turn on Slideshow" → Resume + Monitor on
+    - "Alexa, turn off Slideshow" → Pause + Monitor off
+
+    Requirements:
+    - pip install fauxmo
+    - Alexa device on same network
+    - UDP port 1900 (SSDP) and TCP port (default 12340) accessible
+
+    Setup:
+    1. Enable in config.json: "alexa": {"enabled": true}
+    2. Restart slideshow
+    3. Say "Alexa, discover devices"
+    4. Alexa will find "Slideshow" device
+
+    Limitations:
+    - Only on/off control (WeMo protocol limitation)
+    - Requires local network (no cloud)
+    - Does not work in WSL2 (UDP multicast issues)
+    """
+
+    def __init__(self, config, slideshow):
+        super().__init__(config, slideshow)
+        self.device_name = config.get("device_name", "Slideshow")
+        self.port = config.get("port", 12340)
+        self._fauxmo = None
+        self._thread = None
+
+    def start(self):
+        try:
+            from fauxmo.plugins import FauxmoPlugin
+            import fauxmo.fauxmo as fauxmo_core
+            import asyncio
+        except ImportError:
+            print("Alexa control: fauxmo not installed (pip install fauxmo)")
+            return
+
+        slideshow = self.slideshow
+
+        class SlideshowPlugin(FauxmoPlugin):
+            """Fauxmo plugin that controls the slideshow."""
+
+            def __init__(self, *args, **kwargs):
+                self._slideshow = kwargs.pop('slideshow', None)
+                super().__init__(*args, **kwargs)
+
+            def on(self) -> bool:
+                if self._slideshow:
+                    self._slideshow.paused = False
+                    self._slideshow.monitor.turn_on()
+                    print("Alexa: Slideshow ON")
+                return True
+
+            def off(self) -> bool:
+                if self._slideshow:
+                    self._slideshow.paused = True
+                    self._slideshow.monitor.turn_off()
+                    print("Alexa: Slideshow OFF")
+                return True
+
+            def get_state(self) -> str:
+                if self._slideshow:
+                    return "on" if not self._slideshow.paused else "off"
+                return "off"
+
+        def run_fauxmo():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            # Create plugin instance
+            plugin = SlideshowPlugin(
+                name=self.device_name,
+                port=self.port,
+                slideshow=slideshow
+            )
+
+            try:
+                # Run fauxmo
+                fauxmo_core.main(
+                    config_path_str=None,
+                    verbosity=0,
+                    plugins=[{
+                        "plugin": plugin,
+                        "PLUGINS": {
+                            self.device_name: {
+                                "port": self.port,
+                                "path": "/",
+                            }
+                        }
+                    }]
+                )
+            except Exception as e:
+                print(f"Alexa control error: {e}")
+
+        # Start in background thread
+        self._thread = threading.Thread(target=run_fauxmo, daemon=True)
+        self._thread.start()
+        print(f"Alexa control: '{self.device_name}' on port {self.port}")
+        print("         Say 'Alexa, discover devices' to find it")
+
+    def stop(self):
+        # Fauxmo runs in daemon thread, will stop with main process
+        pass
+
+
 # =============================================================================
 # SLIDESHOW CORE
 # =============================================================================
@@ -2863,6 +2972,13 @@ def main():
         ir_remote = IRRemoteControl(ir_config, app)
         ir_remote.start()
         remote_controls.append(ir_remote)
+
+    # Alexa control via Fauxmo (disabled by default, doesn't work in WSL2)
+    alexa_config = rc_config.get("alexa", {})
+    if alexa_config.get("enabled", False):
+        alexa = FauxmoRemoteControl(alexa_config, app)
+        alexa.start()
+        remote_controls.append(alexa)
 
     # Initialize motion sensor
     motion_config = config.get("motion_sensor", {})
