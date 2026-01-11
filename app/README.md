@@ -1121,22 +1121,37 @@ sudo raspi-config nonint get_overlay_conf
 
 ## Maintenance Mode
 
-To make permanent changes to the system, temporarily disable the overlay:
+The raspi-config overlay uses OverlayFS, which means writes go to RAM. You cannot simply remount `/` as writable - you must disable the overlay and reboot.
 
+**Install helper scripts (once):**
 ```bash
-sudo raspi-config
+sudo cp scripts/rw scripts/ro scripts/is_ro /usr/local/bin/
 ```
 
-Navigate to: **Performance Options → Overlay File System → No**
-
-Reboot, make your changes (apt upgrade, config edits, etc.), then re-enable the overlay via raspi-config.
-
-**Alternative (without reboot):** For quick edits, you can remount as writable:
+**Using helper scripts:**
 ```bash
-sudo mount -o remount,rw /
-# Make changes...
-sudo mount -o remount,ro /
+# Check current status
+is_ro  # Returns "read only" or "write access"
+
+# Disable overlay and reboot (system becomes writable)
+rw
+
+# After making changes: re-enable overlay and reboot
+ro
 ```
+
+**Manual method:**
+```bash
+# Disable overlay and reboot
+sudo raspi-config nonint do_overlayfs 1 && sudo reboot
+
+# Make your changes (apt upgrade, config edits, etc.)
+
+# Re-enable overlay and reboot
+sudo raspi-config nonint do_overlayfs 0 && sudo reboot
+```
+
+**Note:** The often-suggested `sudo mount -o remount,rw /` does NOT work with OverlayFS - it only makes the RAM overlay writable, changes are still lost after reboot.
 
 ## Verification
 

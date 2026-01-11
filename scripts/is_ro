@@ -1,0 +1,8 @@
+#!/bin/bash
+# Check if overlay filesystem is active
+# Returns "read only" or "write access"
+if [ "$(sudo raspi-config nonint get_overlay_now)" = "0" ]; then
+    echo "read only"
+else
+    echo "write access"
+fi

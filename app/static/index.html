@@ -78,11 +78,18 @@
                 <span class="status-label">Version</span>
                 <span class="status-value" id="version-display">--</span>
             </div>
+            <div class="status-row">
+                <span class="status-label">Memory</span>
+                <span class="status-value" id="memory-display" style="font-size: 0.85em; color: #888;">--</span>
+            </div>
             <div class="status-row" id="update-row" style="display: none;">
                 <span class="status-label">Update</span>
                 <a href="/update" class="status-value" style="color: #60a5fa; text-decoration: none;">Available</a>
             </div>
-            <a href="/update" class="version-link">System Update</a>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <a href="/update" class="version-link" style="flex: 1;">System Update</a>
+                <button onclick="restartServer()" class="secondary" style="padding: 8px 12px; font-size: 0.85em;">Restart</button>
+            </div>
         </div>
 
         <p class="refresh-note">Auto-refreshes every 5 seconds</p>
@@ -127,6 +134,13 @@
 
                 currentDuration = data.display_duration;
                 document.getElementById('duration').textContent = currentDuration;
+
+                // Update memory display
+                if (data.memory) {
+                    const mem = data.memory;
+                    document.getElementById('memory-display').textContent =
+                        `${mem.used_mb}/${mem.total_mb} MB (${mem.percent_used}%)`;
+                }
 
                 updateFolderButtons();
             } catch (e) {
@@ -194,6 +208,17 @@
                 }
             } catch (e) {
                 console.error('Version error:', e);
+            }
+        }
+
+        async function restartServer() {
+            if (confirm('Restart the slideshow server?')) {
+                try {
+                    await fetch('/restart');
+                    alert('Server is restarting...');
+                } catch (e) {
+                    // Expected - server stops before responding
+                }
             }
         }
 

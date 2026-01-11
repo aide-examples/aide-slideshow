@@ -2086,6 +2086,14 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                     controller.execute_action("monitor_off")
                     self.send_json({"success": True, "monitor_on": False})
 
+                elif path == '/restart':
+                    self.send_json({"success": True, "message": "Restarting..."})
+                    # Exit after response - systemd will restart the service
+                    def delayed_exit():
+                        time.sleep(0.5)
+                        os._exit(0)
+                    threading.Thread(target=delayed_exit, daemon=True).start()
+
                 elif path == '/folders':
                     folders = set()
                     effective_dir = controller.slideshow.get_effective_image_dir()
@@ -2558,9 +2566,33 @@ class Slideshow:
             pygame.display.flip()
             self.clock.tick(30)
 
+    def get_memory_info(self):
+        """Get memory usage information."""
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                meminfo = {}
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        key = parts[0].rstrip(':')
+                        value = int(parts[1])  # in kB
+                        meminfo[key] = value
+
+                total = meminfo.get('MemTotal', 0)
+                available = meminfo.get('MemAvailable', 0)
+                used = total - available
+                return {
+                    "total_mb": round(total / 1024),
+                    "used_mb": round(used / 1024),
+                    "available_mb": round(available / 1024),
+                    "percent_used": round(used / total * 100) if total > 0 else 0
+                }
+        except:
+            return None
+
     def get_status(self):
         with self.lock:
-            return {
+            status = {
                 "running": self.running,
                 "paused": self.paused,
                 "monitor_on": self.monitor.is_on,
@@ -2569,6 +2601,10 @@ class Slideshow:
                 "filter": self.current_filter,
                 "playlist_size": len(self.playlist)
             }
+            mem = self.get_memory_info()
+            if mem:
+                status["memory"] = mem
+            return status
 
     def set_duration(self, seconds):
         with self.lock:

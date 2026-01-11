@@ -1,0 +1,5 @@
+#!/bin/bash
+# Disable overlay filesystem and reboot to make system writable
+# Use 'ro' to re-enable read-only mode after making changes
+echo "Disabling overlay filesystem..."
+sudo raspi-config nonint do_overlayfs 1 && sudo reboot
