@@ -1032,10 +1032,17 @@ def url_to_filename(url):
     return f"{safe}.png"
 
 
-def generate_welcome_image(url, output_path, width=1920, height=1080):
+def generate_welcome_image(url, output_path, width=1920, height=1080, alexa_device_name=None):
     """Generate a welcome image with QR code pointing to the control UI.
 
     Only imports qrcode library when actually needed (lazy loading).
+
+    Args:
+        url: URL to the control UI
+        output_path: Path to save the image
+        width: Image width in pixels
+        height: Image height in pixels
+        alexa_device_name: If set, show Alexa voice control hint
     """
     try:
         # Lazy import - only load when needed
@@ -1075,19 +1082,27 @@ def generate_welcome_image(url, output_path, width=1920, height=1080):
         title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
         text_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
         url_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
     except:
         title_font = ImageFont.load_default()
         text_font = title_font
         url_font = title_font
+        small_font = title_font
 
     # Text position (right side of QR code)
     text_x = width // 2
-    text_y = height // 2 - 80
+    text_y = height // 2 - 100
 
     # Draw text
     draw.text((text_x, text_y), "Control the Slideshow", font=title_font, fill=(255, 255, 255))
     draw.text((text_x, text_y + 70), "Scan the QR code or visit:", font=text_font, fill=(200, 200, 200))
     draw.text((text_x, text_y + 120), url, font=url_font, fill=(100, 180, 255))
+
+    # Add Alexa hint if enabled
+    if alexa_device_name:
+        alexa_text = f'"Alexa, turn on/off {alexa_device_name}"'
+        draw.text((text_x, text_y + 180), "Or use voice control:", font=text_font, fill=(200, 200, 200))
+        draw.text((text_x, text_y + 225), alexa_text, font=small_font, fill=(255, 180, 100))
 
     # Ensure directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -1098,16 +1113,23 @@ def generate_welcome_image(url, output_path, width=1920, height=1080):
     return True
 
 
-def get_or_create_welcome_image(url):
-    """Get path to welcome image, creating it if needed for this URL."""
-    filename = url_to_filename(url)
+def get_or_create_welcome_image(url, alexa_device_name=None):
+    """Get path to welcome image, creating it if needed for this URL.
+
+    Args:
+        url: URL to the control UI
+        alexa_device_name: If set, include Alexa voice control hint
+    """
+    # Include alexa in filename to regenerate if alexa status changes
+    suffix = f"_alexa_{alexa_device_name}" if alexa_device_name else ""
+    filename = url_to_filename(url + suffix)
     image_path = os.path.join(WELCOME_DIR, filename)
 
-    # Check if image already exists for this URL
+    # Check if image already exists for this URL + alexa config
     if os.path.exists(image_path):
         return image_path
 
-    # Clean up old welcome images (different URLs)
+    # Clean up old welcome images (different URLs or alexa configs)
     if os.path.exists(WELCOME_DIR):
         for old_file in os.listdir(WELCOME_DIR):
             if old_file.endswith('.png'):
@@ -1119,7 +1141,7 @@ def get_or_create_welcome_image(url):
                     pass
 
     # Generate new image
-    if generate_welcome_image(url, image_path):
+    if generate_welcome_image(url, image_path, alexa_device_name=alexa_device_name):
         return image_path
     return None
 
@@ -2447,83 +2469,119 @@ class FauxmoRemoteControl(RemoteControlProvider):
     """
 
     def __init__(self, config, slideshow):
-        super().__init__(config, slideshow)
+        super().__init__(slideshow)
+        self.config = config
         self.device_name = config.get("device_name", "Slideshow")
         self.port = config.get("port", 12340)
         self._fauxmo = None
         self._thread = None
+        self.discovered = False  # Set to True when Alexa discovers the device
 
     def start(self):
         try:
-            from fauxmo.plugins import FauxmoPlugin
-            import fauxmo.fauxmo as fauxmo_core
+            from fauxmo.protocols import Fauxmo
+            from fauxmo.utils import make_udp_sock, get_local_ip
             import asyncio
+            import logging
+            # Reduce fauxmo logging to WARNING (suppress INFO polling messages)
+            logging.getLogger("fauxmo").setLevel(logging.WARNING)
         except ImportError:
-            print("Alexa control: fauxmo not installed (pip install fauxmo)")
+            print("Alexa voice control: FAILED - fauxmo not installed (pip install fauxmo)")
             return
 
         slideshow = self.slideshow
+        device_name = self.device_name
+        port = self.port
 
-        class SlideshowPlugin(FauxmoPlugin):
-            """Fauxmo plugin that controls the slideshow."""
+        class SimpleFauxmoDevice:
+            """Simple Fauxmo device handler for slideshow control."""
 
-            def __init__(self, *args, **kwargs):
-                self._slideshow = kwargs.pop('slideshow', None)
-                super().__init__(*args, **kwargs)
+            def __init__(self, name: str, port: int):
+                self.name = name
+                self.port = port
+                self.state = "off"
 
             def on(self) -> bool:
-                if self._slideshow:
-                    self._slideshow.paused = False
-                    self._slideshow.monitor.turn_on()
+                self.state = "on"
+                # Run slideshow control in background to not block Alexa response
+                def do_on():
+                    slideshow.paused = False
+                    slideshow.monitor.turn_on()
                     print("Alexa: Slideshow ON")
+                threading.Thread(target=do_on, daemon=True).start()
                 return True
 
             def off(self) -> bool:
-                if self._slideshow:
-                    self._slideshow.paused = True
-                    self._slideshow.monitor.turn_off()
+                self.state = "off"
+                # Run slideshow control in background to not block Alexa response
+                def do_off():
+                    slideshow.paused = True
+                    slideshow.monitor.turn_off()
                     print("Alexa: Slideshow OFF")
+                threading.Thread(target=do_off, daemon=True).start()
                 return True
 
             def get_state(self) -> str:
-                if self._slideshow:
-                    return "on" if not self._slideshow.paused else "off"
-                return "off"
+                return "on" if not slideshow.paused else "off"
 
         def run_fauxmo():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-            # Create plugin instance
-            plugin = SlideshowPlugin(
-                name=self.device_name,
-                port=self.port,
-                slideshow=slideshow
-            )
+            plugin = SimpleFauxmoDevice(name=device_name, port=port)
 
             try:
-                # Run fauxmo
-                fauxmo_core.main(
-                    config_path_str=None,
-                    verbosity=0,
-                    plugins=[{
-                        "plugin": plugin,
-                        "PLUGINS": {
-                            self.device_name: {
-                                "port": self.port,
-                                "path": "/",
-                            }
-                        }
-                    }]
+                # Get local IP address for SSDP responses
+                ip_address = get_local_ip()
+                print(f"  Alexa: Using IP address {ip_address}")
+
+                # Create UDP socket for SSDP discovery
+                udp_sock = make_udp_sock()
+                print(f"  Alexa: UDP socket created for SSDP")
+
+                # Create SSDP responder for device discovery
+                from fauxmo.protocols import SSDPServer
+                ssdp = SSDPServer(devices=[
+                    {"name": device_name, "port": port, "ip_address": ip_address}
+                ])
+                listen = loop.create_datagram_endpoint(
+                    lambda: ssdp,
+                    sock=udp_sock
                 )
+                loop.run_until_complete(listen)
+                print(f"  Alexa: SSDP listener started (UDP multicast 239.255.255.250:1900)")
+
+                # Wrapper to detect when Alexa discovers the device
+                alexa_control = self
+                class DiscoveryTrackingFauxmo(Fauxmo):
+                    def data_received(self, data: bytes) -> None:
+                        # Check if this is a setup.xml request (discovery)
+                        if b"GET /setup.xml" in data and not alexa_control.discovered:
+                            alexa_control.discovered = True
+                            print("Alexa: Device discovered by Echo!")
+                        super().data_received(data)
+
+                # Create TCP server for device control - bind to specific IP
+                coro = loop.create_server(
+                    lambda: DiscoveryTrackingFauxmo(name=device_name, plugin=plugin),
+                    host=ip_address,
+                    port=port
+                )
+                server = loop.run_until_complete(coro)
+                print(f"  Alexa: TCP server started on {ip_address}:{port}")
+
+                loop.run_forever()
             except Exception as e:
                 print(f"Alexa control error: {e}")
+                import traceback
+                traceback.print_exc()
 
         # Start in background thread
         self._thread = threading.Thread(target=run_fauxmo, daemon=True)
         self._thread.start()
-        print(f"Alexa control: '{self.device_name}' on port {self.port}")
-        print("         Say 'Alexa, discover devices' to find it")
+        print(f"Alexa voice control enabled: '{self.device_name}' on port {self.port}")
+        print(f"  → Say 'Alexa, discover devices' to find it")
+        print(f"  → Then use 'Alexa, turn on/off {self.device_name}'")
 
     def stop(self):
         # Fauxmo runs in daemon thread, will stop with main process
@@ -2549,6 +2607,9 @@ class Slideshow:
         default_upload = "img/upload"  # Relative default
         self.upload_dir = resolve_safe_path(config.get("upload_dir", default_upload))
         self.current_filter = None
+
+        # Alexa control reference (set externally if enabled)
+        self.alexa_control = None
 
         # Initialize monitor control
         self.monitor = create_monitor_control(config.get("monitor_control", {}))
@@ -2789,7 +2850,12 @@ class Slideshow:
 
     def show_welcome_screen(self, url, duration=20):
         """Show welcome screen with QR code for the given duration."""
-        welcome_path = get_or_create_welcome_image(url)
+        # Get Alexa device name if enabled
+        alexa_device_name = None
+        if self.alexa_control:
+            alexa_device_name = self.alexa_control.device_name
+
+        welcome_path = get_or_create_welcome_image(url, alexa_device_name=alexa_device_name)
         if not welcome_path:
             return
 
@@ -2979,6 +3045,9 @@ def main():
         alexa = FauxmoRemoteControl(alexa_config, app)
         alexa.start()
         remote_controls.append(alexa)
+        app.alexa_control = alexa  # Make accessible for welcome screen
+    else:
+        print("Alexa voice control: disabled")
 
     # Initialize motion sensor
     motion_config = config.get("motion_sensor", {})
