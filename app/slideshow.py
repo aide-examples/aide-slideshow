@@ -33,6 +33,12 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
+# Add aide-frame to Python path (for development with submodule)
+# In production, aide_frame is copied into app/ directory
+AIDE_FRAME_PATH = os.path.join(PROJECT_DIR, 'aide-frame', 'python')
+if os.path.isdir(AIDE_FRAME_PATH) and AIDE_FRAME_PATH not in sys.path:
+    sys.path.insert(0, AIDE_FRAME_PATH)
+
 # =============================================================================
 # LOCAL MODULE IMPORTS
 # =============================================================================
@@ -44,7 +50,11 @@ paths.init(SCRIPT_DIR)
 # Register app-specific paths
 paths.register("DOCS_DIR", os.path.join(paths.APP_DIR, "docs"))
 paths.register("WELCOME_DIR", os.path.join(paths.APP_DIR, ".welcome_cache"))
-paths.register("AIDE_FRAME_DOCS_DIR", os.path.join(paths.APP_DIR, "aide_frame", "docs"))
+# aide_frame docs: prefer submodule path, fallback to embedded
+if os.path.isdir(AIDE_FRAME_PATH):
+    paths.register("AIDE_FRAME_DOCS_DIR", os.path.join(AIDE_FRAME_PATH, "aide_frame", "docs"))
+else:
+    paths.register("AIDE_FRAME_DOCS_DIR", os.path.join(paths.APP_DIR, "aide_frame", "docs"))
 
 from aide_frame.log import logger, set_level
 from aide_frame.platform_detect import PLATFORM, VIDEO_CONFIG
