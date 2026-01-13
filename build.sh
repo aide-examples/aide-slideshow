@@ -6,15 +6,20 @@
 # embedded in app/ directory (no git submodule dependency).
 #
 # Usage:
-#   ./build.sh           # Build to deploy/ directory
-#   ./build.sh --clean   # Remove deploy/ directory
+#   ./build.sh              # Build to deploy/ directory
+#   ./build.sh --tarball    # Build and create tarball for release
+#   ./build.sh --clean      # Remove deploy/ and releases/ directories
+#
+# The tarball can be uploaded to GitHub Releases for remote updates.
 #
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_DIR="$SCRIPT_DIR/deploy"
+RELEASES_DIR="$SCRIPT_DIR/releases"
 AIDE_FRAME_SRC="$SCRIPT_DIR/aide-frame/python/aide_frame"
+REPO_NAME="aide-slideshow"
 
 # Colors for output
 RED='\033[0;31m'
@@ -34,16 +39,33 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Handle --clean flag
-if [ "$1" = "--clean" ]; then
-    if [ -d "$DEPLOY_DIR" ]; then
-        rm -rf "$DEPLOY_DIR"
-        log_info "Removed deploy/ directory"
-    else
-        log_info "deploy/ directory does not exist"
-    fi
-    exit 0
-fi
+CREATE_TARBALL=false
+
+# Handle flags
+case "$1" in
+    --clean)
+        if [ -d "$DEPLOY_DIR" ]; then
+            rm -rf "$DEPLOY_DIR"
+            log_info "Removed deploy/ directory"
+        fi
+        if [ -d "$RELEASES_DIR" ]; then
+            rm -rf "$RELEASES_DIR"
+            log_info "Removed releases/ directory"
+        fi
+        [ ! -d "$DEPLOY_DIR" ] && [ ! -d "$RELEASES_DIR" ] && log_info "Nothing to clean"
+        exit 0
+        ;;
+    --tarball)
+        CREATE_TARBALL=true
+        ;;
+    "")
+        # No flag, just build
+        ;;
+    *)
+        echo "Usage: $0 [--tarball|--clean]"
+        exit 1
+        ;;
+esac
 
 # Check that aide-frame submodule exists
 if [ ! -d "$AIDE_FRAME_SRC" ]; then
@@ -108,5 +130,27 @@ log_info "Version: $VERSION"
 SIZE=$(du -sh "$DEPLOY_DIR" | cut -f1)
 log_info "Total size: $SIZE"
 
-echo ""
-log_info "To create tarball: tar -czf aide-slideshow-$VERSION.tar.gz -C deploy ."
+# Create tarball if requested
+if [ "$CREATE_TARBALL" = true ]; then
+    echo ""
+    mkdir -p "$RELEASES_DIR"
+    TARBALL_NAME="${REPO_NAME}-${VERSION}.tar.gz"
+    TARBALL_PATH="$RELEASES_DIR/$TARBALL_NAME"
+
+    log_info "Creating tarball: $TARBALL_NAME"
+    tar -czf "$TARBALL_PATH" -C "$DEPLOY_DIR" .
+
+    TARBALL_SIZE=$(du -sh "$TARBALL_PATH" | cut -f1)
+    log_info "Tarball size: $TARBALL_SIZE"
+    log_info "Tarball created: $TARBALL_PATH"
+
+    echo ""
+    echo "Next steps for release:"
+    echo "  1. git tag v$VERSION"
+    echo "  2. git push origin v$VERSION"
+    echo "  3. Create GitHub Release with tag v$VERSION"
+    echo "  4. Upload $TARBALL_NAME as release asset"
+else
+    echo ""
+    log_info "To create tarball for release: ./build.sh --tarball"
+fi
