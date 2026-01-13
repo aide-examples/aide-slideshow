@@ -1,0 +1,68 @@
+#!/bin/bash
+#
+# Pre-commit hook: Check if aide-frame submodule is up to date
+#
+# This hook compares the local submodule commit with the latest commit
+# in the aide-frame repository and warns if updates are available.
+
+SUBMODULE_PATH="aide-frame"
+FRAMEWORK_REPO="/home/gero/aide-examples/aide-frame"
+
+# Skip if submodule doesn't exist
+if [ ! -d "$SUBMODULE_PATH/.git" ] && [ ! -f "$SUBMODULE_PATH/.git" ]; then
+    exit 0
+fi
+
+# Get current submodule commit
+SUBMODULE_COMMIT=$(git -C "$SUBMODULE_PATH" rev-parse HEAD 2>/dev/null)
+if [ -z "$SUBMODULE_COMMIT" ]; then
+    exit 0
+fi
+
+# Get latest commit from framework repo
+if [ -d "$FRAMEWORK_REPO/.git" ]; then
+    LATEST_COMMIT=$(git -C "$FRAMEWORK_REPO" rev-parse HEAD 2>/dev/null)
+else
+    # Try to fetch from remote if local repo not available
+    LATEST_COMMIT=$(git -c protocol.file.allow=always ls-remote "$FRAMEWORK_REPO" HEAD 2>/dev/null | cut -f1)
+fi
+
+if [ -z "$LATEST_COMMIT" ]; then
+    exit 0
+fi
+
+# Compare commits
+if [ "$SUBMODULE_COMMIT" != "$LATEST_COMMIT" ]; then
+    echo ""
+    echo "┌─────────────────────────────────────────────────────────────┐"
+    echo "│  aide-frame submodule is behind the framework repository   │"
+    echo "└─────────────────────────────────────────────────────────────┘"
+    echo ""
+    echo "  Submodule: ${SUBMODULE_COMMIT:0:8}"
+    echo "  Latest:    ${LATEST_COMMIT:0:8}"
+    echo ""
+    echo "  To update, run:"
+    echo "    git -c protocol.file.allow=always submodule update --remote aide-frame"
+    echo ""
+    echo "  Then add the submodule change to your commit:"
+    echo "    git add aide-frame"
+    echo ""
+
+    # Ask user what to do
+    exec < /dev/tty
+    read -p "  Continue commit without updating? [y/N] " response
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            echo ""
+            exit 0
+            ;;
+        *)
+            echo ""
+            echo "  Commit aborted. Update submodule first."
+            echo ""
+            exit 1
+            ;;
+    esac
+fi
+
+exit 0
