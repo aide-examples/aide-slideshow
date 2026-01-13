@@ -250,6 +250,49 @@ class UpdateManager:
             self._save_state()
             return {"success": False, "error": str(e)}
 
+    def _get_remote_file_list(self, repo, branch):
+        """
+        Get list of all files in the remote app/ directory using GitHub API.
+
+        Returns list of relative file paths (e.g., ['slideshow.py', 'monitor/__init__.py'])
+        """
+        api_url = f"https://api.github.com/repos/{repo}/git/trees/{branch}?recursive=1"
+
+        try:
+            req = urllib.request.Request(api_url, headers={
+                "User-Agent": "AIDE-Slideshow-Updater",
+                "Accept": "application/vnd.github.v3+json"
+            })
+            with urllib.request.urlopen(req, timeout=30) as response:
+                data = json.loads(response.read().decode('utf-8'))
+
+            files = []
+            for item in data.get("tree", []):
+                path = item.get("path", "")
+                item_type = item.get("type", "")
+
+                # Only include files (not directories) under app/
+                if item_type == "blob" and path.startswith("app/"):
+                    # Remove 'app/' prefix
+                    rel_path = path[4:]
+
+                    # Skip certain files/directories
+                    if rel_path.startswith(('.', 'sample_images/', '__pycache__')):
+                        continue
+                    if rel_path.endswith('.pyc'):
+                        continue
+
+                    # Include updateable files
+                    if rel_path.endswith(('.py', '.md', '.html', '.css', '.js', '.json', '.txt', '.png', '.jpg')) \
+                       or rel_path == 'VERSION':
+                        files.append(rel_path)
+
+            return files
+
+        except Exception as e:
+            # Log error but don't crash
+            return None
+
     def download_update(self):
         """
         Download update files from GitHub and stage them.
@@ -277,26 +320,13 @@ class UpdateManager:
         branch = source.get("branch", "main")
         base_url = f"https://raw.githubusercontent.com/{repo}/{branch}/app"
 
-        # Build list of files to update dynamically from local app/ directory
-        # This way, new files are automatically included in updates
-        files_to_update = []
-        if paths.SCRIPT_DIR:
-            for item in os.listdir(paths.SCRIPT_DIR):
-                item_path = os.path.join(paths.SCRIPT_DIR, item)
-                if os.path.isfile(item_path):
-                    # Include Python files, VERSION, README, and other text files
-                    if item.endswith(('.py', '.md', '.txt', '.json')) or item == 'VERSION':
-                        files_to_update.append(item)
-                elif os.path.isdir(item_path) and item == 'static':
-                    # Include static files (html, css, js)
-                    for static_item in os.listdir(item_path):
-                        if static_item.endswith(('.html', '.css', '.js')):
-                            files_to_update.append(f"static/{static_item}")
-
-        # Ensure essential files are in the list
-        for essential in ['VERSION', 'slideshow.py']:
-            if essential not in files_to_update:
-                files_to_update.append(essential)
+        # Get file list from GitHub API (to know what files exist in remote)
+        # This ensures we download ALL files including new subdirectories
+        files_to_update = self._get_remote_file_list(repo, branch)
+        if not files_to_update:
+            self._state["update_state"] = "idle"
+            self._save_state()
+            return {"success": False, "error": "Could not retrieve file list from GitHub"}
 
         # Prepare staging directory
         staging_dir = os.path.join(self.state_dir, "staging")
@@ -389,14 +419,25 @@ class UpdateManager:
             "errors": errors if errors else None
         }
 
+    def _collect_files_recursive(self, directory):
+        """Collect all files recursively from a directory."""
+        files = []
+        for root, _, filenames in os.walk(directory):
+            for filename in filenames:
+                full_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(full_path, directory)
+                files.append(rel_path)
+        return files
+
     def apply_update(self):
         """
         Apply a staged update.
 
         1. Backs up current app/ files to .update/backup/
-        2. Copies staged files to app/
-        3. Sets pending_verification flag
-        4. Triggers service restart
+        2. Removes files that don't exist in staging (deleted in update)
+        3. Copies staged files to app/
+        4. Sets pending_verification flag
+        5. Triggers service restart
 
         Returns:
             dict with apply results
@@ -414,22 +455,40 @@ class UpdateManager:
         if not os.path.exists(staging_dir):
             return {"success": False, "error": "Staging directory not found"}
 
-        # Create backup of current files
+        # Get list of staged files (the new state)
+        staged_files = set(self._collect_files_recursive(staging_dir))
+
+        # Create backup of current updateable files
         try:
             if os.path.exists(backup_dir):
                 shutil.rmtree(backup_dir)
             os.makedirs(backup_dir, exist_ok=True)
 
-            # Backup current files
             current_version = get_local_version()
-            for item in os.listdir(staging_dir):
-                src = os.path.join(paths.SCRIPT_DIR, item)
-                dst = os.path.join(backup_dir, item)
+
+            # Backup all files that are either in staging or currently exist
+            # (to enable proper rollback)
+            for rel_path in staged_files:
+                src = os.path.join(paths.SCRIPT_DIR, rel_path)
+                dst = os.path.join(backup_dir, rel_path)
                 if os.path.exists(src):
-                    if os.path.isdir(src):
-                        shutil.copytree(src, dst, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(src, dst)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst)
+
+            # Also backup files that will be deleted (exist locally but not in staging)
+            # Only for updateable directories
+            updateable_dirs = ['monitor', 'motion', 'remote', 'static', 'docs']
+            for upd_dir in updateable_dirs:
+                dir_path = os.path.join(paths.SCRIPT_DIR, upd_dir)
+                if os.path.isdir(dir_path):
+                    for root, _, files in os.walk(dir_path):
+                        for f in files:
+                            full_path = os.path.join(root, f)
+                            rel_path = os.path.relpath(full_path, paths.SCRIPT_DIR)
+                            if rel_path not in staged_files:
+                                dst = os.path.join(backup_dir, rel_path)
+                                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                                shutil.copy2(full_path, dst)
 
             self._state["backup_version"] = current_version
 
@@ -441,23 +500,29 @@ class UpdateManager:
         self._save_state()
 
         try:
-            for item in os.listdir(staging_dir):
-                src = os.path.join(staging_dir, item)
-                dst = os.path.join(paths.SCRIPT_DIR, item)
+            # First, remove files that were deleted in the update
+            # (exist locally in updateable dirs but not in staging)
+            for upd_dir in updateable_dirs:
+                dir_path = os.path.join(paths.SCRIPT_DIR, upd_dir)
+                if os.path.isdir(dir_path):
+                    for root, _, files in os.walk(dir_path, topdown=False):
+                        for f in files:
+                            full_path = os.path.join(root, f)
+                            rel_path = os.path.relpath(full_path, paths.SCRIPT_DIR)
+                            if rel_path not in staged_files:
+                                os.remove(full_path)
+                        # Remove empty directories
+                        if root != dir_path and not os.listdir(root):
+                            os.rmdir(root)
 
-                if os.path.isdir(src):
-                    # For directories (like static/), copy contents
-                    if os.path.exists(dst):
-                        # Copy individual files to preserve any extra files
-                        for subitem in os.listdir(src):
-                            shutil.copy2(
-                                os.path.join(src, subitem),
-                                os.path.join(dst, subitem)
-                            )
-                    else:
-                        shutil.copytree(src, dst)
-                else:
-                    shutil.copy2(src, dst)
+            # Copy all staged files to app/
+            for rel_path in staged_files:
+                src = os.path.join(staging_dir, rel_path)
+                dst = os.path.join(paths.SCRIPT_DIR, rel_path)
+
+                # Create parent directories if needed
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
 
         except OSError as e:
             # Try to rollback
@@ -512,23 +577,18 @@ class UpdateManager:
         if not os.path.exists(backup_dir):
             return {"success": False, "error": "Backup directory not found"}
 
-        # Restore backup files
+        # Restore backup files recursively
         try:
-            for item in os.listdir(backup_dir):
-                src = os.path.join(backup_dir, item)
-                dst = os.path.join(paths.SCRIPT_DIR, item)
+            backup_files = set(self._collect_files_recursive(backup_dir))
 
-                if os.path.isdir(src):
-                    if os.path.exists(dst):
-                        for subitem in os.listdir(src):
-                            shutil.copy2(
-                                os.path.join(src, subitem),
-                                os.path.join(dst, subitem)
-                            )
-                    else:
-                        shutil.copytree(src, dst)
-                else:
-                    shutil.copy2(src, dst)
+            # Copy all backup files to app/
+            for rel_path in backup_files:
+                src = os.path.join(backup_dir, rel_path)
+                dst = os.path.join(paths.SCRIPT_DIR, rel_path)
+
+                # Create parent directories if needed
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
 
         except OSError as e:
             return {"success": False, "error": f"Rollback failed: {e}"}

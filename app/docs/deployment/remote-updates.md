@@ -6,6 +6,8 @@ Downloading and applying updates from GitHub.
 
 - **Version checking** against GitHub repository
 - **Manual download and installation** (user decides when to update)
+- **Full recursive updates** including subdirectories (monitor/, motion/, remote/, docs/)
+- **File deletion handling** - removes files that no longer exist in the update
 - **Automatic rollback** on failure (max 2 attempts before disabling updates)
 - **Development mode detection** (when local version is ahead of remote)
 - **Web UI** at `/update` for easy management
@@ -132,12 +134,14 @@ Add to `config.json`:
              → Compares local VERSION with GitHub
 
 2. DOWNLOAD  User clicks "Download Update"
-             → Downloads files to .update/staging/
+             → Fetches file list from GitHub API (recursive)
+             → Downloads all files to .update/staging/
              → Verifies SHA256 checksums (if CHECKSUMS.sha256 exists)
 
 3. APPLY     User clicks "Install Update"
              → Backs up current files to .update/backup/
-             → Copies staged files to app/
+             → Removes deleted files (in updateable directories)
+             → Copies staged files to app/ (including subdirectories)
              → Restarts slideshow service
 
 4. VERIFY    After 60s stable operation
