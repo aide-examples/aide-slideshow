@@ -4,3 +4,4 @@ img/*
 __pycache__/
 .update/
 app/welcome/
+deploy/
