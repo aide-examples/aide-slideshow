@@ -7,13 +7,21 @@ Software architecture and module dependencies.
 ```
 app/
 ├── slideshow.py          # Main entry point, Slideshow class, pygame loop
-├── config.py             # Configuration loading and defaults
-├── paths.py              # Centralized path constants
-├── platform_detect.py    # Platform detection (raspi/wsl2/linux/macos/windows)
-├── log.py                # Centralized logging
-├── update.py             # UpdateManager for remote updates
-├── utils.py              # Utilities: path security, welcome image
+├── imgPrepare.py         # Image preprocessing utilities
 ├── VERSION               # Current version number
+│
+├── aide_frame/           # Reusable application framework
+│   ├── __init__.py
+│   ├── log.py            # Centralized logging
+│   ├── paths.py          # Path management with register()
+│   ├── config.py         # Configuration loading
+│   ├── platform_detect.py # Platform detection (raspi/wsl2/linux/etc.)
+│   └── update.py         # GitHub-based remote updates
+│
+├── utils/                # Application-specific utilities
+│   ├── __init__.py
+│   ├── app_config.py     # DEFAULT_CONFIG for slideshow
+│   └── helpers.py        # Welcome image, docs, path security
 │
 ├── monitor/              # Monitor power control providers
 ├── motion/               # Motion detection providers
@@ -29,11 +37,17 @@ app/
 
 ```mermaid
 flowchart TB
-    subgraph Core["Core Modules"]
+    subgraph Framework["aide_frame/ (Reusable)"]
         log["log.py<br/><i>Logging</i>"]
-        paths["paths.py<br/><i>Path constants</i>"]
+        paths["paths.py<br/><i>Path management</i>"]
         config["config.py<br/><i>Config loading</i>"]
         platform["platform_detect.py<br/><i>Platform detection</i>"]
+        update["update.py<br/><i>UpdateManager</i>"]
+    end
+
+    subgraph AppUtils["utils/ (App-Specific)"]
+        app_config["app_config.py<br/><i>DEFAULT_CONFIG</i>"]
+        helpers["helpers.py<br/><i>Welcome image, docs</i>"]
     end
 
     subgraph Providers["Provider Packages"]
@@ -42,56 +56,58 @@ flowchart TB
         remote["remote/<br/><i>RemoteControlProvider</i>"]
     end
 
-    subgraph Utilities["Utilities"]
-        utils["utils.py<br/><i>Path security, welcome image</i>"]
-        update["update.py<br/><i>UpdateManager</i>"]
-    end
-
     subgraph Main["Entry Point"]
         slideshow["slideshow.py<br/><i>Slideshow class, main()</i>"]
     end
 
-    %% Core dependencies
+    %% Framework internal
+    update --> paths
+
+    %% App utils depend on framework
+    helpers --> log
+    helpers --> paths
+
+    %% Providers depend on framework
     monitor --> log
     motion --> log
     remote --> log
     remote --> paths
-    remote --> utils
-    utils --> log
-    utils --> paths
-    update --> paths
+    remote --> helpers
 
     %% Main imports everything
     slideshow --> log
     slideshow --> paths
     slideshow --> config
     slideshow --> platform
+    slideshow --> update
+    slideshow --> app_config
+    slideshow --> helpers
     slideshow --> monitor
     slideshow --> motion
     slideshow --> remote
-    slideshow --> update
-    slideshow --> utils
 ```
 
 **Dependency rules:**
-- `log.py` and `paths.py` have no local dependencies (foundation modules)
-- Provider packages depend only on `log` (and `paths`/`utils` for http_api)
+- `aide_frame/` modules are self-contained and reusable across projects
+- `utils/` contains application-specific code that depends on `aide_frame/`
+- Provider packages depend only on `aide_frame.log` (and `paths`/`helpers` for http_api)
 - `slideshow.py` is the composition root - it wires everything together
 
 ## Key Design Principles
 
 | Principle | Description |
 |-----------|-------------|
+| **Framework Separation** | Generic infrastructure (`aide_frame/`) is separated from app-specific code (`utils/`) |
 | **Plugin Architecture** | Each concern (monitor, motion, remote) has an abstract base class with multiple provider implementations |
 | **Lazy Loading** | Heavy dependencies (PIL, fauxmo, etc.) are only imported when needed |
 | **Platform Abstraction** | Hardware-specific code gracefully falls back to no-ops on unsupported platforms |
-| **Centralized Logging** | All modules use `from log import logger` for consistent output |
+| **Centralized Logging** | All modules use `from aide_frame.log import logger` for consistent output |
 
 ## Components
 
-### Technical Components (Reusable)
+### Framework Components (aide_frame/)
 
-These modules are application-independent and could be reused in other projects:
+These modules are application-independent and can be reused as a starting point for new projects:
 
 | Component | Documentation |
 |-----------|---------------|
