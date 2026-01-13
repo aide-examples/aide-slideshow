@@ -1,163 +1,182 @@
 # Remote Update System
 
-Downloading and applying updates from GitHub.
+Downloading and applying updates from GitHub Releases.
 
 ## Features
 
-- **Version checking** against GitHub repository
+- **Version checking** against GitHub Releases API
+- **Tarball-based updates** - downloads complete release packages
+- **Embedded aide_frame** - framework is included in updates
 - **Manual download and installation** (user decides when to update)
-- **Full recursive updates** including subdirectories (monitor/, motion/, remote/, docs/)
-- **File deletion handling** - removes files that no longer exist in the update
 - **Automatic rollback** on failure (max 2 attempts before disabling updates)
 - **Development mode detection** (when local version is ahead of remote)
 - **Web UI** at `/update` for easy management
 
-## Deployment Modes
+## Architecture
 
-The update system works in both deployment scenarios:
-
-### Simple Installation (without /data partition)
+Das Update-System nutzt GitHub Releases mit Build-Tarballs:
 
 ```
-/home/pi/aide-slideshow/
-├── app/                    ← Updateable files (direct write)
+GitHub Release v1.3.0
+├── Source code (zip)         ← Automatisch von GitHub (NICHT verwenden)
+├── Source code (tar.gz)      ← Automatisch von GitHub (NICHT verwenden)
+└── aide-slideshow-1.3.0.tar.gz  ← Build-Tarball (VERWENDEN)
+```
+
+Das Build-Tarball enthält `aide_frame/` eingebettet und wird mit `./build.sh --tarball` erstellt.
+
+Siehe [aide_frame Architecture](../../aide_frame/docs/architecture.md) für Details zum Build- und Release-Prozess.
+
+## Deployment Modes
+
+Das Update-System funktioniert in beiden Szenarien:
+
+### Simple Installation (ohne /data Partition)
+
+```
+/home/pi/
+├── app/                    ← Updatebare Dateien (direkt beschreibbar)
+│   ├── aide_frame/         ← Eingebettetes Framework
 │   ├── slideshow.py
 │   ├── VERSION
-│   ├── static/
 │   └── ...
-├── .update/                ← Update state and backups
+├── .update/                ← Update-State und Backups
 │   ├── state.json
 │   ├── staging/
 │   └── backup/
-├── img/                    ← Images
-└── config.json             ← User config (not updated)
+├── img/                    ← Bilder
+└── config.json             ← User-Config (wird nicht updated)
 ```
 
-Updates are written directly to the `app/` directory. The filesystem must be writable.
-
-### Production Installation (with /data partition and read-only root)
+### Production Installation (mit /data Partition und read-only root)
 
 ```
-/home/pi/aide-slideshow/    ← Read-only (overlayroot)
-├── app -> /data/app        ← Symlink to writable partition
-├── img -> /data/img        ← Symlink to writable partition
+/home/pi/                   ← Read-only (overlayroot)
+├── app -> /data/app        ← Symlink zu beschreibbarer Partition
+├── img -> /data/img        ← Symlink zu beschreibbarer Partition
 └── config.json
 
-/data/                      ← Writable partition
-├── app/                    ← Updateable files
-├── img/                    ← Images
-└── .update/                ← Update state and backups
-```
-
-The symlink makes updates transparent - the code uses relative paths and Python's `os.path.abspath()` follows symlinks automatically.
-
-## Setup Symlinks (for Production)
-
-Run once after initial deployment to the Pi with a `/data` partition:
-
-```bash
-#!/bin/bash
-SLIDESHOW_DIR="/home/pi/aide-slideshow"
-
-# 1. Copy app/ to /data/app (first time only)
-if [ ! -d "/data/app" ]; then
-    sudo cp -r "$SLIDESHOW_DIR/app" /data/app
-    sudo chown -R pi:pi /data/app
-fi
-
-# 2. Replace app/ with symlink
-rm -rf "$SLIDESHOW_DIR/app"
-ln -s /data/app "$SLIDESHOW_DIR/app"
-
-# 3. Create update state directory
-mkdir -p /data/.update/{backup,staging}
-
-# 4. Reload service
-sudo systemctl daemon-reload
-sudo systemctl restart slideshow
+/data/                      ← Beschreibbare Partition
+├── app/                    ← Updatebare Dateien
+├── img/                    ← Bilder
+└── .update/                ← Update-State und Backups
 ```
 
 ## Web UI
 
-Access the update management at `http://raspberrypi:8080/update`
+Zugang zur Update-Verwaltung unter `http://raspberrypi:8080/update`
 
-The UI shows:
-- Current and available version
-- Update status (checking, downloading, staged, etc.)
-- Buttons for Check, Download, Install, Rollback
-- Re-enable button if updates were disabled due to failures
+Die UI zeigt:
+- Aktuelle und verfügbare Version
+- Update-Status (checking, downloading, staged, etc.)
+- Buttons für Check, Download, Install, Rollback
+- Re-enable Button falls Updates wegen Fehlern deaktiviert wurden
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/update/status` | GET | Current update status |
-| `/api/update/check` | POST | Check GitHub for new version |
-| `/api/update/download` | POST | Download and stage update |
-| `/api/update/apply` | POST | Apply staged update and restart |
-| `/api/update/rollback` | POST | Rollback to backup version |
-| `/api/update/enable` | POST | Re-enable updates after failures |
+| `/api/update/status` | GET | Aktueller Update-Status |
+| `/api/update/check` | POST | Prüft GitHub auf neue Version |
+| `/api/update/download` | POST | Lädt Update herunter und stagt es |
+| `/api/update/apply` | POST | Wendet gestagtes Update an und startet neu |
+| `/api/update/rollback` | POST | Rollback zur Backup-Version |
+| `/api/update/enable` | POST | Reaktiviert Updates nach Fehlern |
 
 ## Configuration
 
-Add to `config.json`:
+In `config.json`:
 
 ```json
 {
-  "update": {
-    "enabled": true,
-    "source": {
-      "repo": "aide-examples/aide-slideshow",
-      "branch": "main"
-    },
-    "auto_check_hours": 24,
-    "auto_check": true,
-    "auto_download": false,
-    "auto_apply": false
-  }
+    "remote_update": {
+        "source": {
+            "repo": "aide-examples/aide-slideshow"
+        }
+    }
+}
+```
+
+Optionale Einstellungen:
+
+```json
+{
+    "remote_update": {
+        "source": {
+            "repo": "aide-examples/aide-slideshow",
+            "use_releases": true
+        },
+        "service_name": "slideshow",
+        "auto_check": true,
+        "auto_check_hours": 24,
+        "auto_download": false,
+        "auto_apply": false
+    }
 }
 ```
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `enabled` | Enable update functionality | `true` |
-| `source.repo` | GitHub repository | `aide-examples/aide-slideshow` |
-| `source.branch` | Branch to update from | `main` |
-| `auto_check` | Periodically check for updates | `true` |
-| `auto_download` | Automatically download updates | `false` |
-| `auto_apply` | Automatically apply updates | `false` |
+| `source.repo` | GitHub Repository (owner/repo) | - |
+| `source.use_releases` | GitHub Releases nutzen | `true` |
+| `service_name` | Systemd Service Name für Restart | - |
+| `auto_check` | Periodisch nach Updates prüfen | `true` |
+| `auto_check_hours` | Stunden zwischen Auto-Checks | `24` |
+| `auto_download` | Updates automatisch herunterladen | `false` |
+| `auto_apply` | Updates automatisch installieren | `false` |
 
 ## Update Flow
 
 ```
-1. CHECK     User clicks "Check for Updates"
-             → Compares local VERSION with GitHub
+1. CHECK     User klickt "Check for Updates"
+             → Prüft GitHub Releases API
+             → Vergleicht lokale VERSION mit Release-Tag
 
-2. DOWNLOAD  User clicks "Download Update"
-             → Fetches file list from GitHub API (recursive)
-             → Downloads all files to .update/staging/
-             → Verifies SHA256 checksums (if CHECKSUMS.sha256 exists)
+2. DOWNLOAD  User klickt "Download Update"
+             → Lädt Release-Asset (aide-slideshow-X.Y.Z.tar.gz)
+             → Extrahiert nach .update/staging/
+             → Verifiziert erforderliche Dateien
 
-3. APPLY     User clicks "Install Update"
-             → Backs up current files to .update/backup/
-             → Removes deleted files (in updateable directories)
-             → Copies staged files to app/ (including subdirectories)
-             → Restarts slideshow service
+3. APPLY     User klickt "Install Update"
+             → Backup aktueller Dateien nach .update/backup/
+             → Kopiert staging/ nach app/
+             → Startet Slideshow-Service neu
 
-4. VERIFY    After 60s stable operation
-             → Clears pending_verification flag
-             → Cleans up staging directory
+4. VERIFY    Nach 60s stabilem Betrieb
+             → Löscht pending_verification Flag
+             → Räumt staging/ auf
 
-   ROLLBACK  If service fails to start:
-             → Restores from backup
-             → After 2 failures: disables updates
+   ROLLBACK  Bei Service-Fehler:
+             → Stellt aus backup/ wieder her
+             → Nach 2 Fehlern: deaktiviert Updates
 ```
 
 ## Rollback Safety
 
-The system includes automatic rollback protection:
+Das System enthält automatischen Rollback-Schutz:
 
-- Before applying, current files are backed up to `.update/backup/`
-- After restart, a 60-second timer verifies stable operation
-- If the service crashes before verification, it rolls back automatically
-- After 2 consecutive failures, updates are disabled (requires manual re-enable)
+- Vor dem Anwenden werden aktuelle Dateien nach `.update/backup/` gesichert
+- Nach Neustart läuft ein 60-Sekunden Timer zur Stabilitätsprüfung
+- Bei Service-Crash vor Verifizierung wird automatisch zurückgerollt
+- Nach 2 aufeinanderfolgenden Fehlern werden Updates deaktiviert
+
+## Neues Release erstellen
+
+Kurz-Anleitung (Details in [aide_frame Architecture](../../aide_frame/docs/architecture.md)):
+
+```bash
+# 1. Version erhöhen
+echo "1.3.1" > app/VERSION
+
+# 2. Committen
+git add -A && git commit -m "Bump to 1.3.1" && git push
+
+# 3. Build
+./build.sh --tarball
+
+# 4. Tag
+git tag v1.3.1 && git push origin v1.3.1
+
+# 5. GitHub Release erstellen und Tarball hochladen
+#    releases/aide-slideshow-1.3.1.tar.gz als Asset hochladen
+```
