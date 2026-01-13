@@ -26,7 +26,7 @@ from urllib.parse import urlparse, parse_qs
 import paths
 from log import logger
 from . import RemoteControlProvider
-from utils import load_static_file, load_readme
+from utils import load_static_file, load_readme, list_docs, load_doc, get_docs_structure
 
 
 class HTTPAPIRemoteControl(RemoteControlProvider):
@@ -182,6 +182,40 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                     self.send_json({"content": load_readme()})
                     return
 
+                # List all documentation files
+                if path == '/api/docs':
+                    docs = list_docs()
+                    self.send_json({"docs": docs})
+                    return
+
+                # Get documentation structure with sections and titles
+                if path == '/api/docs/structure':
+                    self.send_json(get_docs_structure())
+                    return
+
+                # Serve a specific documentation file
+                if path.startswith('/api/docs/'):
+                    doc_path = path[10:]  # Remove '/api/docs/' prefix
+                    if not doc_path:
+                        self.send_json({"docs": list_docs()})
+                        return
+                    content = load_doc(doc_path)
+                    if content is not None:
+                        self.send_json({"content": content, "path": doc_path})
+                    else:
+                        self.send_json({"error": f"Document not found: {doc_path}"}, 404)
+                    return
+
+                # Serve static assets from docs/ (images, etc.)
+                if path.startswith('/docs-assets/'):
+                    asset_path = path[13:]  # Remove '/docs-assets/' prefix
+                    # Security: prevent directory traversal
+                    if '..' in asset_path or asset_path.startswith('/'):
+                        self.send_error(403, "Forbidden")
+                        return
+                    self._serve_docs_asset(asset_path)
+                    return
+
                 if path == '/status':
                     self.send_json(controller.slideshow.get_status())
 
@@ -310,6 +344,31 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                             "POST /api/update/enable - Re-enable updates after failures",
                         ]
                     })
+
+            def _serve_docs_asset(self, asset_path):
+                """Serve a static asset from the docs/ directory."""
+                filepath = os.path.join(paths.DOCS_DIR, asset_path)
+                if not os.path.isfile(filepath):
+                    self.send_error(404, f"Asset not found: {asset_path}")
+                    return
+
+                ext = os.path.splitext(asset_path)[1].lower()
+                mime_type = paths.MIME_TYPES.get(ext, 'application/octet-stream')
+                is_binary = ext in ('.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp')
+
+                try:
+                    mode = 'rb' if is_binary else 'r'
+                    with open(filepath, mode) as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header('Content-Type', mime_type)
+                    self.end_headers()
+                    if is_binary:
+                        self.wfile.write(content)
+                    else:
+                        self.wfile.write(content.encode())
+                except Exception as e:
+                    self.send_error(500, f"Error reading asset: {e}")
 
             def _handle_prepare_count(self, params):
                 """Handle /api/prepare/count endpoint."""

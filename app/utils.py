@@ -93,6 +93,235 @@ def load_readme():
 
 
 # =============================================================================
+# DOCUMENTATION
+# =============================================================================
+
+def list_docs():
+    """List all markdown files in docs/ directory recursively.
+
+    Returns:
+        List of relative paths like ["index.md", "hardware/monitor-control.md", ...]
+    """
+    paths.ensure_initialized()
+    if paths.DOCS_DIR is None or not os.path.isdir(paths.DOCS_DIR):
+        return []
+
+    docs = []
+    for root, _, files in os.walk(paths.DOCS_DIR):
+        for f in files:
+            if f.endswith('.md'):
+                rel_path = os.path.relpath(os.path.join(root, f), paths.DOCS_DIR)
+                docs.append(rel_path)
+    return sorted(docs)
+
+
+def load_doc(filename):
+    """Load a specific markdown file from docs/ directory.
+
+    Args:
+        filename: Relative path within docs/, e.g. "hardware/monitor-control.md"
+
+    Returns:
+        File content as string, or None if not found or invalid path
+    """
+    paths.ensure_initialized()
+    if paths.DOCS_DIR is None:
+        return None
+
+    # Security: block path traversal
+    if '..' in filename:
+        logger.warning(f"Path traversal attempt blocked: {filename}")
+        return None
+
+    filepath = os.path.join(paths.DOCS_DIR, filename)
+
+    # Verify the resolved path is still within DOCS_DIR
+    real_path = os.path.realpath(filepath)
+    real_docs = os.path.realpath(paths.DOCS_DIR)
+    if not real_path.startswith(real_docs + os.sep) and real_path != real_docs:
+        logger.warning(f"Path escape attempt blocked: {filename}")
+        return None
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def extract_title_and_description(filepath):
+    """Extract the first H1 heading and first sentence from a markdown file.
+
+    Args:
+        filepath: Full path to the markdown file
+
+    Returns:
+        Tuple of (title, description). Description is the first sentence
+        after the H1 heading, or None if not found.
+    """
+    title = None
+    description = None
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            found_title = False
+            collecting_desc = False
+            desc_lines = []
+
+            for line in f:
+                # Find title (first H1)
+                if not found_title and line.startswith('# '):
+                    title = line[2:].strip()
+                    found_title = True
+                    collecting_desc = True
+                    continue
+
+                # Collect description after title
+                if collecting_desc:
+                    stripped = line.strip()
+
+                    # Skip empty lines right after title
+                    if not stripped and not desc_lines:
+                        continue
+
+                    # Stop at next heading, code block, or horizontal rule
+                    if stripped.startswith('#') or stripped.startswith('```') or stripped.startswith('---'):
+                        break
+
+                    # Skip certain markdown elements
+                    if stripped.startswith('|') or stripped.startswith('-') or stripped.startswith('*'):
+                        if not desc_lines:  # Skip if we haven't started collecting
+                            continue
+                        break  # Stop if we hit a list/table after text
+
+                    if stripped:
+                        desc_lines.append(stripped)
+
+                    # Check if we have a complete sentence
+                    combined = ' '.join(desc_lines)
+                    # Find first sentence ending with . ! or ?
+                    for i, char in enumerate(combined):
+                        if char in '.!?' and i > 10:  # Minimum sentence length
+                            # Make sure it's not an abbreviation (e.g., "e.g.")
+                            if i + 1 >= len(combined) or combined[i + 1] in ' \n':
+                                description = combined[:i + 1]
+                                break
+                    if description:
+                        break
+
+    except (FileNotFoundError, IOError):
+        pass
+
+    # Fallback for title: filename without extension, formatted
+    if not title:
+        basename = os.path.basename(filepath).replace('.md', '')
+        title = basename.replace('-', ' ').replace('_', ' ').title()
+
+    return title, description
+
+
+def extract_title(filepath):
+    """Extract the first H1 heading from a markdown file.
+
+    Args:
+        filepath: Full path to the markdown file
+
+    Returns:
+        Title string (from first H1 or fallback to filename)
+    """
+    title, _ = extract_title_and_description(filepath)
+    return title
+
+
+def get_docs_structure():
+    """Get documentation structure with sections, titles, and descriptions.
+
+    Returns a structured list of sections, each containing documents with
+    their paths, titles (from H1), and descriptions (first sentence after H1).
+
+    Sections:
+    - Overview: Root-level files (index.md)
+    - Requirements: requirements/*.md
+    - Platform: platform/*.md
+    - Implementation Technical: implementation/index.md + implementation/technical/*.md
+    - Implementation Application: implementation/slideshow/*.md
+    - Deployment: deployment/*.md
+    - Development: development/*.md
+
+    Within each section, index.md comes first, rest alphabetically sorted.
+
+    Returns:
+        dict with "sections" list, each doc has: path, title, description (optional)
+    """
+    paths.ensure_initialized()
+    if paths.DOCS_DIR is None or not os.path.isdir(paths.DOCS_DIR):
+        return {"sections": []}
+
+    # Define section order and their paths
+    # Tuple: (section_path, section_name, extra_files_path)
+    # extra_files_path is for including parent index.md in subsection
+    section_defs = [
+        (None, "Overview", None),                                    # Root-level files (just index.md)
+        ("requirements", "Requirements", None),
+        ("platform", "Platform", None),
+        ("implementation/technical", "Implementation Technical", "implementation"),  # Include implementation/index.md
+        ("implementation/slideshow", "Implementation Application", None),
+        ("deployment", "Deployment", None),
+        ("development", "Development", None),
+    ]
+
+    sections = []
+
+    for section_path, section_name, extra_path in section_defs:
+        docs = []
+
+        if section_path is None:
+            # Root level: only .md files directly in docs/
+            scan_dir = paths.DOCS_DIR
+            for f in os.listdir(scan_dir):
+                if f.endswith('.md'):
+                    filepath = os.path.join(scan_dir, f)
+                    if os.path.isfile(filepath):
+                        title, desc = extract_title_and_description(filepath)
+                        doc_entry = {"path": f, "title": title}
+                        if desc:
+                            doc_entry["description"] = desc
+                        docs.append(doc_entry)
+        else:
+            # Include extra index.md from parent directory if specified
+            if extra_path:
+                extra_index = os.path.join(paths.DOCS_DIR, extra_path, "index.md")
+                if os.path.isfile(extra_index):
+                    title, desc = extract_title_and_description(extra_index)
+                    rel_path = extra_path + "/index.md"
+                    doc_entry = {"path": rel_path, "title": title}
+                    if desc:
+                        doc_entry["description"] = desc
+                    docs.append(doc_entry)
+
+            # Subdirectory
+            scan_dir = os.path.join(paths.DOCS_DIR, section_path)
+            if os.path.isdir(scan_dir):
+                for f in os.listdir(scan_dir):
+                    if f.endswith('.md'):
+                        filepath = os.path.join(scan_dir, f)
+                        if os.path.isfile(filepath):
+                            title, desc = extract_title_and_description(filepath)
+                            rel_path = os.path.join(section_path, f).replace(os.sep, '/')
+                            doc_entry = {"path": rel_path, "title": title}
+                            if desc:
+                                doc_entry["description"] = desc
+                            docs.append(doc_entry)
+
+        if docs:
+            # Sort: index.md first, then alphabetically by path
+            docs.sort(key=lambda d: (0 if d["path"].endswith("index.md") else 1, d["path"]))
+            sections.append({"name": section_name, "docs": docs})
+
+    return {"sections": sections}
+
+
+# =============================================================================
 # WELCOME IMAGE GENERATION
 # =============================================================================
 
@@ -330,6 +559,11 @@ __all__ = [
     'resolve_safe_path',
     'load_static_file',
     'load_readme',
+    'list_docs',
+    'load_doc',
+    'extract_title',
+    'extract_title_and_description',
+    'get_docs_structure',
     'url_to_filename',
     'generate_welcome_image',
     'get_or_create_welcome_image',

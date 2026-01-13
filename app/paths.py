@@ -11,6 +11,7 @@ import os
 SCRIPT_DIR = None      # app/ directory
 PROJECT_DIR = None     # Parent of app/ (repo root)
 STATIC_DIR = None      # app/static/
+DOCS_DIR = None        # app/docs/
 WELCOME_DIR = None     # app/.welcome_cache/
 VERSION_FILE = None    # app/VERSION
 UPDATE_STATE_DIR = None  # .update/ directory (sibling to app/)
@@ -25,7 +26,7 @@ def init(script_dir=None):
     Args:
         script_dir: Path to app/ directory. If None, auto-detects from this file's location.
     """
-    global SCRIPT_DIR, PROJECT_DIR, STATIC_DIR, WELCOME_DIR, VERSION_FILE, UPDATE_STATE_DIR, _initialized
+    global SCRIPT_DIR, PROJECT_DIR, STATIC_DIR, DOCS_DIR, WELCOME_DIR, VERSION_FILE, UPDATE_STATE_DIR, _initialized
 
     if script_dir is None:
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +34,7 @@ def init(script_dir=None):
     SCRIPT_DIR = script_dir
     PROJECT_DIR = os.path.dirname(script_dir)
     STATIC_DIR = os.path.join(script_dir, "static")
+    DOCS_DIR = os.path.join(script_dir, "docs")
     WELCOME_DIR = os.path.join(script_dir, ".welcome_cache")
     VERSION_FILE = os.path.join(script_dir, "VERSION")
     UPDATE_STATE_DIR = os.path.join(PROJECT_DIR, ".update")
