@@ -38,6 +38,12 @@
         }
     },
 
+    "remote_update": {
+        "source": {
+            "repo": "aide-examples/aide-slideshow"
+        }
+    },
+
     "remote_control": {
         "http_api": {
             "enabled": true,
