@@ -24,7 +24,7 @@ Limitations:
 
 import threading
 
-from log import logger
+from aide_frame.log import logger
 from . import RemoteControlProvider
 
 

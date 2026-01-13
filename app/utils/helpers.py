@@ -11,8 +11,8 @@ Contains:
 import os
 import threading
 
-import paths
-from log import logger
+from aide_frame import paths
+from aide_frame.log import logger
 
 
 # =============================================================================
@@ -82,9 +82,9 @@ def load_static_file(filename, binary=False):
 def load_readme():
     """Load README.md from the app directory."""
     paths.ensure_initialized()
-    if paths.SCRIPT_DIR is None:
+    if paths.APP_DIR is None:
         return "# README not found"
-    readme_path = os.path.join(paths.SCRIPT_DIR, "README.md")
+    readme_path = os.path.join(paths.APP_DIR, "README.md")
     try:
         with open(readme_path, 'r', encoding='utf-8') as f:
             return f.read()
@@ -413,12 +413,13 @@ def generate_welcome_image(url, output_path, width=1920, height=1080, alexa_devi
     return True
 
 
-def get_or_create_welcome_image(url, alexa_device_name=None):
+def get_or_create_welcome_image(url, alexa_device_name=None, force=False):
     """Get path to welcome image, creating it if needed for this URL.
 
     Args:
         url: URL to the control UI
         alexa_device_name: If set, include Alexa voice control hint
+        force: If True, regenerate even if cached image exists
     """
     paths.ensure_initialized()
     if paths.WELCOME_DIR is None:
@@ -430,8 +431,17 @@ def get_or_create_welcome_image(url, alexa_device_name=None):
     image_path = os.path.join(paths.WELCOME_DIR, filename)
 
     # Check if image already exists for this URL + alexa config
-    if os.path.exists(image_path):
-        return image_path
+    if os.path.exists(image_path) and not force:
+        # Verify the image is valid (not empty/corrupt)
+        try:
+            size = os.path.getsize(image_path)
+            if size > 1000:  # Valid PNG should be > 1KB
+                logger.debug(f"Using cached welcome image: {filename}")
+                return image_path
+            else:
+                logger.warning(f"Cached welcome image too small ({size} bytes), regenerating")
+        except OSError:
+            pass
 
     # Clean up old welcome images (different URLs or alexa configs)
     if os.path.exists(paths.WELCOME_DIR):

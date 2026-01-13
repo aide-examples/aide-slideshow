@@ -1,17 +1,35 @@
 """
-Remote update manager for the slideshow application.
+Remote update manager for applications.
 
-Features:
-- Version checking against GitHub
+Provides GitHub-based updates with:
+- Version checking against GitHub repository
 - Manual download and staging
 - Automatic rollback on failure (max 2 attempts)
 - Detection when local version is ahead of remote
 
 Update flow:
-1. CHECK: User clicks "Check for Updates" -> compare VERSION with GitHub
+1. CHECK: Compare local VERSION with GitHub
 2. DOWNLOAD: Download files to .update/staging/, verify checksums
 3. APPLY: Backup current files, copy staging to app/, restart service
 4. VERIFY: After 60s stable, confirm update; on failure, rollback
+
+Usage:
+    from aide_frame.update import UpdateManager, get_local_version
+
+    # Configure for your application
+    update_config = {
+        "enabled": True,
+        "source": {
+            "repo": "username/repo-name",
+            "branch": "main"
+        },
+        "service_name": "myapp",  # For systemctl restart
+        "updateable_dirs": ["src", "static", "templates"],
+        "required_files": ["main.py", "VERSION"]
+    }
+
+    manager = UpdateManager(update_config)
+    status = manager.get_status()
 """
 
 import datetime
@@ -23,7 +41,7 @@ import subprocess
 import urllib.error
 import urllib.request
 
-import paths
+from . import paths
 
 
 def get_local_version():
@@ -69,21 +87,35 @@ def compare_versions(local, remote):
 
 class UpdateManager:
     """
-    Manages remote updates for the slideshow application.
+    Manages remote updates from GitHub.
 
-    Features:
-    - Version checking against GitHub
-    - Manual download and staging
-    - Automatic rollback on failure (max 2 attempts)
-    - Detection when local version is ahead of remote
+    Configuration options:
+        enabled: bool - Enable/disable updates
+        source.repo: str - GitHub repo (e.g., "username/repo")
+        source.branch: str - Branch to update from
+        service_name: str - Systemd service name for restart
+        updateable_dirs: list - Directories that can have files deleted
+        required_files: list - Files that must be downloaded successfully
+        file_extensions: list - File extensions to include in updates
+        auto_check: bool - Periodically check for updates
+        auto_check_hours: int - Hours between auto-checks
+        auto_download: bool - Automatically download updates
+        auto_apply: bool - Automatically apply updates
     """
 
     DEFAULT_CONFIG = {
         "enabled": True,
         "source": {
-            "repo": "aide-examples/aide-slideshow",
+            "repo": None,  # Must be set by application
             "branch": "main"
         },
+        "service_name": None,  # For systemctl restart
+        "updateable_dirs": [],  # Directories where files can be deleted
+        "required_files": ["VERSION"],  # Files that must be downloaded
+        "file_extensions": [
+            '.py', '.md', '.html', '.css', '.js', '.json', '.txt',
+            '.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.svg'
+        ],
         "auto_check_hours": 24,
         "auto_check": True,
         "auto_download": False,
@@ -192,7 +224,10 @@ class UpdateManager:
             return {"success": False, "error": "Updates disabled due to repeated failures"}
 
         source = self.config.get("source", {})
-        repo = source.get("repo", "aide-examples/aide-slideshow")
+        repo = source.get("repo")
+        if not repo:
+            return {"success": False, "error": "No repository configured"}
+
         branch = source.get("branch", "main")
 
         # Build URL for raw VERSION file
@@ -202,7 +237,7 @@ class UpdateManager:
         self._save_state()
 
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "AIDE-Slideshow-Updater"})
+            req = urllib.request.Request(url, headers={"User-Agent": "AIDE-Frame-Updater"})
             with urllib.request.urlopen(req, timeout=10) as response:
                 remote_version = response.read().decode('utf-8').strip()
 
@@ -254,13 +289,14 @@ class UpdateManager:
         """
         Get list of all files in the remote app/ directory using GitHub API.
 
-        Returns list of relative file paths (e.g., ['slideshow.py', 'monitor/__init__.py'])
+        Returns list of relative file paths (e.g., ['main.py', 'utils/__init__.py'])
         """
         api_url = f"https://api.github.com/repos/{repo}/git/trees/{branch}?recursive=1"
+        file_extensions = tuple(self.config.get("file_extensions", self.DEFAULT_CONFIG["file_extensions"]))
 
         try:
             req = urllib.request.Request(api_url, headers={
-                "User-Agent": "AIDE-Slideshow-Updater",
+                "User-Agent": "AIDE-Frame-Updater",
                 "Accept": "application/vnd.github.v3+json"
             })
             with urllib.request.urlopen(req, timeout=30) as response:
@@ -283,9 +319,7 @@ class UpdateManager:
                         continue
 
                     # Include updateable files
-                    if rel_path.endswith(('.py', '.md', '.html', '.css', '.js', '.json', '.txt',
-                                          '.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.svg')) \
-                       or rel_path == 'VERSION':
+                    if rel_path.endswith(file_extensions) or rel_path == 'VERSION':
                         files.append(rel_path)
 
             return files
@@ -317,12 +351,14 @@ class UpdateManager:
             return {"success": False, "error": "No update available to download"}
 
         source = self.config.get("source", {})
-        repo = source.get("repo", "aide-examples/aide-slideshow")
+        repo = source.get("repo")
+        if not repo:
+            return {"success": False, "error": "No repository configured"}
+
         branch = source.get("branch", "main")
         base_url = f"https://raw.githubusercontent.com/{repo}/{branch}/app"
 
-        # Get file list from GitHub API (to know what files exist in remote)
-        # This ensures we download ALL files including new subdirectories
+        # Get file list from GitHub API
         files_to_update = self._get_remote_file_list(repo, branch)
         if not files_to_update:
             self._state["update_state"] = "idle"
@@ -352,7 +388,7 @@ class UpdateManager:
         # First, try to download CHECKSUMS.sha256 if it exists
         checksums_url = f"{base_url}/CHECKSUMS.sha256"
         try:
-            req = urllib.request.Request(checksums_url, headers={"User-Agent": "AIDE-Slideshow-Updater"})
+            req = urllib.request.Request(checksums_url, headers={"User-Agent": "AIDE-Frame-Updater"})
             with urllib.request.urlopen(req, timeout=10) as response:
                 checksums_content = response.read().decode('utf-8')
                 for line in checksums_content.strip().split('\n'):
@@ -371,7 +407,7 @@ class UpdateManager:
             staging_path = os.path.join(staging_dir, filepath)
 
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": "AIDE-Slideshow-Updater"})
+                req = urllib.request.Request(url, headers={"User-Agent": "AIDE-Frame-Updater"})
                 with urllib.request.urlopen(req, timeout=30) as response:
                     content = response.read()
 
@@ -389,20 +425,21 @@ class UpdateManager:
 
             except urllib.error.HTTPError as e:
                 if e.code == 404:
-                    # File doesn't exist in remote, skip it
-                    pass
+                    pass  # File doesn't exist in remote, skip
                 else:
                     errors.append(f"{filepath}: HTTP {e.code}")
             except Exception as e:
                 errors.append(f"{filepath}: {str(e)}")
 
-        # Check if we got the essential files
-        if "VERSION" not in downloaded or "slideshow.py" not in downloaded:
+        # Check if we got the required files
+        required_files = self.config.get("required_files", ["VERSION"])
+        missing_required = [f for f in required_files if f not in downloaded]
+        if missing_required:
             self._state["update_state"] = "idle"
             self._save_state()
             return {
                 "success": False,
-                "error": "Failed to download essential files",
+                "error": f"Failed to download required files: {missing_required}",
                 "downloaded": downloaded,
                 "errors": errors
             }
@@ -435,7 +472,7 @@ class UpdateManager:
         Apply a staged update.
 
         1. Backs up current app/ files to .update/backup/
-        2. Removes files that don't exist in staging (deleted in update)
+        2. Removes files that don't exist in staging (in updateable_dirs)
         3. Copies staged files to app/
         4. Sets pending_verification flag
         5. Triggers service restart
@@ -468,24 +505,22 @@ class UpdateManager:
             current_version = get_local_version()
 
             # Backup all files that are either in staging or currently exist
-            # (to enable proper rollback)
             for rel_path in staged_files:
-                src = os.path.join(paths.SCRIPT_DIR, rel_path)
+                src = os.path.join(paths.APP_DIR, rel_path)
                 dst = os.path.join(backup_dir, rel_path)
                 if os.path.exists(src):
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     shutil.copy2(src, dst)
 
             # Also backup files that will be deleted (exist locally but not in staging)
-            # Only for updateable directories
-            updateable_dirs = ['monitor', 'motion', 'remote', 'static', 'docs']
+            updateable_dirs = self.config.get("updateable_dirs", [])
             for upd_dir in updateable_dirs:
-                dir_path = os.path.join(paths.SCRIPT_DIR, upd_dir)
+                dir_path = os.path.join(paths.APP_DIR, upd_dir)
                 if os.path.isdir(dir_path):
                     for root, _, files in os.walk(dir_path):
                         for f in files:
                             full_path = os.path.join(root, f)
-                            rel_path = os.path.relpath(full_path, paths.SCRIPT_DIR)
+                            rel_path = os.path.relpath(full_path, paths.APP_DIR)
                             if rel_path not in staged_files:
                                 dst = os.path.join(backup_dir, rel_path)
                                 os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -502,14 +537,13 @@ class UpdateManager:
 
         try:
             # First, remove files that were deleted in the update
-            # (exist locally in updateable dirs but not in staging)
             for upd_dir in updateable_dirs:
-                dir_path = os.path.join(paths.SCRIPT_DIR, upd_dir)
+                dir_path = os.path.join(paths.APP_DIR, upd_dir)
                 if os.path.isdir(dir_path):
                     for root, _, files in os.walk(dir_path, topdown=False):
                         for f in files:
                             full_path = os.path.join(root, f)
-                            rel_path = os.path.relpath(full_path, paths.SCRIPT_DIR)
+                            rel_path = os.path.relpath(full_path, paths.APP_DIR)
                             if rel_path not in staged_files:
                                 os.remove(full_path)
                         # Remove empty directories
@@ -519,14 +553,13 @@ class UpdateManager:
             # Copy all staged files to app/
             for rel_path in staged_files:
                 src = os.path.join(staging_dir, rel_path)
-                dst = os.path.join(paths.SCRIPT_DIR, rel_path)
+                dst = os.path.join(paths.APP_DIR, rel_path)
 
                 # Create parent directories if needed
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)
 
         except OSError as e:
-            # Try to rollback
             self._state["update_state"] = "idle"
             self._save_state()
             return {"success": False, "error": f"Apply failed: {e}"}
@@ -550,11 +583,13 @@ class UpdateManager:
 
     def _trigger_restart(self):
         """Trigger service restart via systemctl."""
+        service_name = self.config.get("service_name")
+        if not service_name:
+            return {"triggered": False, "error": "No service name configured"}
+
         try:
-            # Use systemctl to restart ourselves
-            # This is safe because systemd will wait for the current request to complete
             subprocess.Popen(
-                ["sudo", "systemctl", "restart", "slideshow"],
+                ["sudo", "systemctl", "restart", service_name],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
@@ -582,12 +617,10 @@ class UpdateManager:
         try:
             backup_files = set(self._collect_files_recursive(backup_dir))
 
-            # Copy all backup files to app/
             for rel_path in backup_files:
                 src = os.path.join(backup_dir, rel_path)
-                dst = os.path.join(paths.SCRIPT_DIR, rel_path)
+                dst = os.path.join(paths.APP_DIR, rel_path)
 
-                # Create parent directories if needed
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)
 

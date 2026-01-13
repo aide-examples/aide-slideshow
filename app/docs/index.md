@@ -4,9 +4,11 @@
 
 A modular fullscreen photo slideshow with a plugin architecture for different hardware setups.
 
-Designed to run on a dedicated device connected to a wall mounted display.
+Designed to run on a *Raspberry Zero* connected to a wall mounted display.
 
 This project is part of [AIDE examples](https://github.com/aide-examples) - a series of applications built almost completely with agentic coding.
+
+AIDE Slideshow contains a set of modules - *aide-frame* - which might be re-used in a different project.
 
 ---
 

@@ -1,10 +1,9 @@
 """
-Configuration loading and defaults.
+Application-specific configuration defaults for the slideshow.
 
-Provides default configuration values and loading from JSON files.
+This is the DEFAULT_CONFIG that was previously in aide_frame/config.py.
+Each application defines its own defaults here.
 """
-
-import json
 
 DEFAULT_CONFIG = {
     "image_dir": "img/show",
@@ -83,30 +82,21 @@ DEFAULT_CONFIG = {
             "device_name": "Slideshow",
             "port": 12340
         }
+    },
+
+    # Update system configuration
+    "update": {
+        "enabled": True,
+        "source": {
+            "repo": "aide-examples/aide-slideshow",
+            "branch": "main"
+        },
+        "service_name": "slideshow",
+        "updateable_dirs": ["aide_frame", "monitor", "motion", "remote", "static", "docs", "utils"],
+        "required_files": ["VERSION", "slideshow.py"],
+        "auto_check_hours": 24,
+        "auto_check": True,
+        "auto_download": False,
+        "auto_apply": False
     }
 }
-
-
-def load_config(config_path="/home/pi/slideshow/config.json"):
-    """Load configuration from JSON file, merging with defaults."""
-    config = json.loads(json.dumps(DEFAULT_CONFIG))  # Deep copy
-
-    def deep_merge(base, override):
-        """Recursively merge override into base."""
-        for key, value in override.items():
-            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                deep_merge(base[key], value)
-            else:
-                base[key] = value
-        return base
-
-    try:
-        with open(config_path, 'r') as f:
-            user_config = json.load(f)
-            deep_merge(config, user_config)
-    except FileNotFoundError:
-        print(f"Config not found at {config_path}, using defaults")
-    except json.JSONDecodeError as e:
-        print(f"Config parse error: {e}, using defaults")
-
-    return config

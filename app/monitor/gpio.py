@@ -15,7 +15,7 @@ Limitations:
 - Hard power cut
 """
 
-from log import logger
+from aide_frame.log import logger
 from . import MonitorControlProvider
 
 

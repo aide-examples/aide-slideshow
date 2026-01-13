@@ -15,7 +15,7 @@ Limitations:
 - Hard power cut may not be ideal for all displays
 """
 
-from log import logger
+from aide_frame.log import logger
 from . import MonitorControlProvider
 
 

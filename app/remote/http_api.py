@@ -23,10 +23,10 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-import paths
-from log import logger
+from aide_frame import paths
+from aide_frame.log import logger
+from utils.helpers import load_static_file, load_readme, list_docs, load_doc, get_docs_structure
 from . import RemoteControlProvider
-from utils import load_static_file, load_readme, list_docs, load_doc, get_docs_structure
 
 
 class HTTPAPIRemoteControl(RemoteControlProvider):
@@ -373,7 +373,7 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
             def _handle_prepare_count(self, params):
                 """Handle /api/prepare/count endpoint."""
                 # Import here to avoid circular imports
-                from ..utils import resolve_safe_path, PathSecurityError, get_imgPrepare
+                from utils.helpers import resolve_safe_path, PathSecurityError, get_imgPrepare
 
                 dir_param = params.get('dir', [controller.slideshow.image_dir])[0]
                 try:
@@ -447,7 +447,7 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
             def _handle_prepare_start(self, data):
                 """Handle /api/prepare/start endpoint."""
                 # Import here to avoid circular imports
-                from ..utils import resolve_safe_path, PathSecurityError, get_imgPrepare
+                from utils.helpers import resolve_safe_path, PathSecurityError, get_imgPrepare
 
                 module = get_imgPrepare()
                 if not module:

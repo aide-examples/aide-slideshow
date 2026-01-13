@@ -10,7 +10,7 @@ import time
 import threading
 from abc import ABC, abstractmethod
 
-from log import logger
+from aide_frame.log import logger
 
 
 class MotionSensorProvider(ABC):

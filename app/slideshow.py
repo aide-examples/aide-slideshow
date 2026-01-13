@@ -37,19 +37,26 @@ if SCRIPT_DIR not in sys.path:
 # LOCAL MODULE IMPORTS
 # =============================================================================
 
-import paths
-paths.init(SCRIPT_DIR)  # Initialize central path config first
+# Initialize aide_frame paths first
+from aide_frame import paths
+paths.init(SCRIPT_DIR)
 
-from log import logger, set_level
-from platform_detect import PLATFORM, VIDEO_CONFIG
-from config import load_config
+# Register app-specific paths
+paths.register("DOCS_DIR", os.path.join(paths.APP_DIR, "docs"))
+paths.register("WELCOME_DIR", os.path.join(paths.APP_DIR, ".welcome_cache"))
+
+from aide_frame.log import logger, set_level
+from aide_frame.platform_detect import PLATFORM, VIDEO_CONFIG
+from aide_frame.config import load_config
+from aide_frame.update import UpdateManager, get_local_version
+
+from utils import DEFAULT_CONFIG
+from utils.helpers import resolve_safe_path, get_or_create_welcome_image, prepare_job
 from monitor import create_monitor_control
 from motion import create_motion_sensor
 from remote.http_api import HTTPAPIRemoteControl
 from remote.ir_remote import IRRemoteControl
 from remote.alexa import FauxmoRemoteControl
-from update import UpdateManager, get_local_version
-from utils import resolve_safe_path, get_or_create_welcome_image, prepare_job
 
 
 # =============================================================================
@@ -448,16 +455,8 @@ def main():
     ]
     config_paths = [p for p in config_paths if p]  # Remove None
 
-    config = None
-    for path in config_paths:
-        if os.path.exists(path):
-            config = load_config(path)
-            logger.info(f"Loaded config from {path}")
-            break
-
-    if config is None:
-        config = load_config("/nonexistent")  # Will use defaults
-        logger.info("Using default configuration")
+    config = load_config(search_paths=config_paths, defaults=DEFAULT_CONFIG)
+    logger.info("Configuration loaded")
 
     # Apply command line overrides
     if args.image_dir:

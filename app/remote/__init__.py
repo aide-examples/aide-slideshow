@@ -9,7 +9,7 @@ Provides different backends for controlling the slideshow:
 
 from abc import ABC, abstractmethod
 
-from log import logger
+from aide_frame.log import logger
 
 
 class RemoteControlProvider(ABC):
