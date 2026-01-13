@@ -283,7 +283,8 @@ class UpdateManager:
                         continue
 
                     # Include updateable files
-                    if rel_path.endswith(('.py', '.md', '.html', '.css', '.js', '.json', '.txt', '.png', '.jpg')) \
+                    if rel_path.endswith(('.py', '.md', '.html', '.css', '.js', '.json', '.txt',
+                                          '.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.svg')) \
                        or rel_path == 'VERSION':
                         files.append(rel_path)
 
