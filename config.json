@@ -2,7 +2,7 @@
     "image_dir": "img/show",
     "upload_dir": "img/upload",
     "display_duration": 35,
-    "fade_steps": 5,
+    "fade_steps": 15,
 
     "monitor_control": {
         "provider": "cec",

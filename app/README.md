@@ -623,6 +623,7 @@ curl http://192.168.0.106:12340/setup.xml
 - Does not work in WSL2 (UDP multicast issues with Windows networking)
 
 ### Future Providers (Not Yet Implemented)
+- **Hue Emulation**: Philips Hue bridge emulation for brightness control via Alexa ("Alexa, set Slideshow to 50%"). Would enable software-based image brightness adjustment. Requires port 80 (root or setcap). Could replace fauxmo.
 - **Alexa Extended**: Custom Alexa skill for folder selection
 - **Bluetooth**: Bluetooth remote support
 
