@@ -19,7 +19,7 @@ The target platform is the Raspberry Pi Zero 2 WH:
 
 With only 512 MB RAM, memory management is critical:
 
-- **GPU Memory Split**: Configure in `/boot/config.txt` with `gpu_mem=64` or similar
+- **GPU Memory Split**: Configure in `/boot/config.txt` with `gpu_mem=48` or similar
 - **No Desktop Environment**: Run headless with pygame in kmsdrm mode
 - **Image Loading**: Images are loaded one at a time, previous image is released before loading next
 - **Lazy Imports**: Heavy libraries (PIL, fauxmo) are only imported when needed

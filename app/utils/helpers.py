@@ -115,17 +115,25 @@ def list_docs():
     return sorted(docs)
 
 
-def load_doc(filename):
-    """Load a specific markdown file from docs/ directory.
+def load_doc(filename, framework=False):
+    """Load a specific markdown file from docs/ or aide_frame/docs/.
 
     Args:
         filename: Relative path within docs/, e.g. "hardware/monitor-control.md"
+        framework: If True, load from aide_frame/docs/ instead of docs/
 
     Returns:
         File content as string, or None if not found or invalid path
     """
     paths.ensure_initialized()
-    if paths.DOCS_DIR is None:
+
+    # Choose base directory
+    if framework:
+        base_dir = paths.get("AIDE_FRAME_DOCS_DIR")
+    else:
+        base_dir = paths.DOCS_DIR
+
+    if base_dir is None:
         return None
 
     # Security: block path traversal
@@ -133,12 +141,12 @@ def load_doc(filename):
         logger.warning(f"Path traversal attempt blocked: {filename}")
         return None
 
-    filepath = os.path.join(paths.DOCS_DIR, filename)
+    filepath = os.path.join(base_dir, filename)
 
-    # Verify the resolved path is still within DOCS_DIR
+    # Verify the resolved path is still within base_dir
     real_path = os.path.realpath(filepath)
-    real_docs = os.path.realpath(paths.DOCS_DIR)
-    if not real_path.startswith(real_docs + os.sep) and real_path != real_docs:
+    real_base = os.path.realpath(base_dir)
+    if not real_path.startswith(real_base + os.sep) and real_path != real_base:
         logger.warning(f"Path escape attempt blocked: {filename}")
         return None
 
@@ -239,40 +247,70 @@ def get_docs_structure():
     Returns a structured list of sections, each containing documents with
     their paths, titles (from H1), and descriptions (first sentence after H1).
 
-    Sections:
-    - Overview: Root-level files (index.md)
-    - Requirements: requirements/*.md
-    - Platform: platform/*.md
-    - Implementation Technical: implementation/index.md + implementation/technical/*.md
-    - Implementation Application: implementation/slideshow/*.md
-    - Deployment: deployment/*.md
-    - Development: development/*.md
+    Sections are organized in two groups:
+    1. AIDE Frame (from aide_frame/docs/): Framework documentation
+    2. Application docs (from docs/): Slideshow-specific documentation
 
     Within each section, index.md comes first, rest alphabetically sorted.
 
     Returns:
         dict with "sections" list, each doc has: path, title, description (optional)
+              Framework docs have "framework": true flag
     """
     paths.ensure_initialized()
+    sections = []
+
+    # Helper to build AIDE Frame section
+    def build_framework_section():
+        frame_docs_dir = paths.get("AIDE_FRAME_DOCS_DIR")
+        if not frame_docs_dir or not os.path.isdir(frame_docs_dir):
+            return None
+        docs = []
+        for f in os.listdir(frame_docs_dir):
+            if f.endswith('.md'):
+                filepath = os.path.join(frame_docs_dir, f)
+                if os.path.isfile(filepath):
+                    title, desc = extract_title_and_description(filepath)
+                    doc_entry = {"path": f, "title": title, "framework": True}
+                    if desc:
+                        doc_entry["description"] = desc
+                    docs.append(doc_entry)
+        if docs:
+            docs.sort(key=lambda d: (0 if d["path"].endswith("index.md") else 1, d["path"]))
+            return {"name": "AIDE Frame", "docs": docs, "framework": True}
+        return None
+
+    # ==========================================================================
+    # Application documentation (docs/)
+    # ==========================================================================
     if paths.DOCS_DIR is None or not os.path.isdir(paths.DOCS_DIR):
-        return {"sections": []}
+        frame_section = build_framework_section()
+        if frame_section:
+            sections.append(frame_section)
+        return {"sections": sections}
 
     # Define section order and their paths
     # Tuple: (section_path, section_name, extra_files_path)
-    # extra_files_path is for including parent index.md in subsection
+    # Use "AIDE_FRAME" as marker for where to insert framework docs
     section_defs = [
-        (None, "Overview", None),                                    # Root-level files (just index.md)
+        (None, "Overview", None),
         ("requirements", "Requirements", None),
         ("platform", "Platform", None),
-        ("implementation/technical", "Implementation Technical", "implementation"),  # Include implementation/index.md
-        ("implementation/slideshow", "Implementation Application", None),
+        ("implementation", "Implementation", None),
+        ("implementation/slideshow", "Application Components", None),
+        ("AIDE_FRAME", None, None),  # Marker for AIDE Frame section
         ("deployment", "Deployment", None),
         ("development", "Development", None),
     ]
 
-    sections = []
-
     for section_path, section_name, extra_path in section_defs:
+        # Handle AIDE Frame marker
+        if section_path == "AIDE_FRAME":
+            frame_section = build_framework_section()
+            if frame_section:
+                sections.append(frame_section)
+            continue
+
         docs = []
 
         if section_path is None:

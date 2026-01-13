@@ -44,6 +44,7 @@ paths.init(SCRIPT_DIR)
 # Register app-specific paths
 paths.register("DOCS_DIR", os.path.join(paths.APP_DIR, "docs"))
 paths.register("WELCOME_DIR", os.path.join(paths.APP_DIR, ".welcome_cache"))
+paths.register("AIDE_FRAME_DOCS_DIR", os.path.join(paths.APP_DIR, "aide_frame", "docs"))
 
 from aide_frame.log import logger, set_level
 from aide_frame.platform_detect import PLATFORM, VIDEO_CONFIG

@@ -18,15 +18,6 @@ Feature list from the user's perspective. Items marked with (*) are implemented.
   - transform images for "wrong screen orientation" - to be used with a monitor which is physically rotated by 90°
   - Offer art style borders/frames
 
-## Energy Management
-
-- Run on an energy efficient device (*)
-- Switch the monitor off when no images shall be shown (*)
-- React on motion detection
-- Allow time dependent on/off periods
-- Allow daylight dependent on/off periods
-- Adapt brightness to ambient light conditions
-
 ## Control (How)
 
 - Via REST API (*)
@@ -54,6 +45,15 @@ Feature list from the user's perspective. Items marked with (*) are implemented.
 - secure ftp access to image directory (*)
 - Batch upload via API
 - Interactive upload via a web API (*)
+
+## Energy Management
+
+- Run on an energy efficient device (*)
+- Switch the monitor off when no images shall be shown (*)
+- React on motion detection
+- Allow time dependent on/off periods
+- Allow daylight dependent on/off periods
+- Adapt brightness to ambient light conditions
 
 ## Documentation
 

@@ -354,7 +354,9 @@
                         const titleAttr = doc.description
                             ? ` title="${doc.description.replace(/"/g, '&quot;')}"`
                             : '';
-                        html += `<li><a href="?doc=${doc.path}" data-doc="${doc.path}"${titleAttr}>${doc.title}</a></li>`;
+                        // Framework docs use framework/ prefix
+                        const docPath = doc.framework ? 'framework/' + doc.path : doc.path;
+                        html += `<li><a href="?doc=${docPath}" data-doc="${docPath}"${titleAttr}>${doc.title}</a></li>`;
                     }
                     html += '</ul>';
                 }

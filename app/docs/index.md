@@ -20,7 +20,7 @@ The documentation is organized into these sections:
 
 - **Requirements** - Feature list from the user's perspective
 - **Platform** - Hardware selection, dependencies, and system setup
-- **Implementation Technical** - Reusable components (config, logging, platform detection)
-- **Implementation Application** - Slideshow-specific modules (monitor control, motion detection, etc.)
+- **Application Components** - Slideshow-specific modules (monitor control, motion detection, image preparation, ..)
+- **Framework Components** - Reusable components (config, logging, platform detection)
 - **Deployment** - Installation, read-only filesystem, remote updates
 - **Development** - Testing, extending, troubleshooting

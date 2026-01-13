@@ -194,14 +194,23 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
                     return
 
                 # Serve a specific documentation file
+                # Framework docs: /api/docs/framework/filename.md
+                # App docs: /api/docs/filename.md
                 if path.startswith('/api/docs/'):
                     doc_path = path[10:]  # Remove '/api/docs/' prefix
                     if not doc_path:
                         self.send_json({"docs": list_docs()})
                         return
-                    content = load_doc(doc_path)
+
+                    # Check if this is a framework doc request
+                    framework = False
+                    if doc_path.startswith('framework/'):
+                        framework = True
+                        doc_path = doc_path[10:]  # Remove 'framework/' prefix
+
+                    content = load_doc(doc_path, framework=framework)
                     if content is not None:
-                        self.send_json({"content": content, "path": doc_path})
+                        self.send_json({"content": content, "path": doc_path, "framework": framework})
                     else:
                         self.send_json({"error": f"Document not found: {doc_path}"}, 404)
                     return
