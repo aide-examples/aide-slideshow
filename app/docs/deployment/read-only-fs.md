@@ -12,11 +12,12 @@ SD Card Layout:
 │ Partition 1: /boot/firmware (FAT32, ~512MB)         │
 ├─────────────────────────────────────────────────────┤
 │ Partition 2: / (ext4, ~4-8GB) → READ-ONLY           │
-│   - System, Python, /home/pi/config.json            │
+│   - System, Python                                  │
 ├─────────────────────────────────────────────────────┤
 │ Partition 3: /data (ext4, remaining) → READ-WRITE   │
 │   - Images: /home/pi/img → /data/img                │
 │   - App code: /home/pi/app → /data/app              │
+│   - Framework: /home/pi/aide-frame → /data/aide-frame│
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -80,7 +81,7 @@ sudo chown pi:pi /data
 
 ### 4. Move Data and Create Symlinks
 
-Assuming your slideshow is installed directly under `/home/pi/` with `app/` and `img/` directories:
+Assuming your slideshow is installed directly under `/home/pi/` with `app/`, `img/`, and `aide-frame/` directories:
 
 ```bash
 # Move images to new partition
@@ -89,9 +90,13 @@ sudo mv /home/pi/img /data/img
 # Move app code to new partition (for remote updates)
 sudo mv /home/pi/app /data/app
 
+# Move aide-frame to new partition
+sudo mv /home/pi/aide-frame /data/aide-frame
+
 # Create symlinks
 ln -s /data/img /home/pi/img
 ln -s /data/app /home/pi/app
+ln -s /data/aide-frame /home/pi/aide-frame
 
 # Create update state directory
 mkdir -p /data/.update/{backup,staging}
@@ -101,9 +106,12 @@ ln -s /data/.update /home/pi/.update
 sudo chown -R pi:pi /data
 
 # Verify
-ls -la /home/pi/img  # Should point to /data/img
-ls -la /home/pi/app  # Should point to /data/app
+ls -la /home/pi/img         # Should point to /data/img
+ls -la /home/pi/app         # Should point to /data/app
+ls -la /home/pi/aide-frame  # Should point to /data/aide-frame
 ```
+
+**Important:** The `aide-frame` directory contains the framework used by the slideshow. It must be a sibling of `app/` (i.e., at `/home/pi/aide-frame/`) because `slideshow.py` looks for it at `../aide-frame/python/` relative to `app/`.
 
 ### 5. Enable Read-Only Filesystem via raspi-config
 

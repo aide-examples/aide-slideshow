@@ -54,7 +54,7 @@ echo "standby 0" | cec-client -s -d 1  # TV off
 echo "on 0" | cec-client -s -d 1       # TV on
 ```
 
-See [Monitor Control](../implementation/slideshow/monitor-control.md) for configuration.
+See [Monitor Control](../implementation/monitor-control.md) for configuration.
 
 ## GPIO Connections
 

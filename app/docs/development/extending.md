@@ -90,7 +90,7 @@ DEFAULT_CONFIG = {
 
 ### 4. Document
 
-Add documentation to `docs/implementation/slideshow/monitor-control.md`.
+Add documentation to `docs/implementation/monitor-control.md`.
 
 ## Provider Base Classes
 
