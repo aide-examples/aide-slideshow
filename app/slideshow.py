@@ -58,10 +58,11 @@ else:
 # 3. AIDE-FRAME IMPORTS - Safe now that paths is initialized
 # =============================================================================
 
-from aide_frame.log import logger, set_level
+from aide_frame.log import logger
 from aide_frame.platform_detect import PLATFORM, VIDEO_CONFIG
 from aide_frame.config import load_config
 from aide_frame.update import UpdateManager, get_local_version
+from aide_frame.args import add_common_args, apply_common_args
 
 # =============================================================================
 # 4. APP-SPECIFIC IMPORTS
@@ -426,10 +427,9 @@ def parse_args():
     """Parse command line arguments for testing/development."""
     import argparse
     parser = argparse.ArgumentParser(description='Photo Slideshow')
+    add_common_args(parser, config_default='config.json')
     parser.add_argument('--image-dir', '-i', type=str,
                         help='Override image directory')
-    parser.add_argument('--config', '-c', type=str,
-                        help='Path to config file')
     parser.add_argument('--duration', '-d', type=int,
                         help='Override display duration (seconds)')
     parser.add_argument('--fullscreen', '-f', action='store_true',
@@ -438,17 +438,23 @@ def parse_args():
                         help='Force windowed mode')
     parser.add_argument('--size', '-s', type=str, default='1280x720',
                         help='Window size for windowed mode (WIDTHxHEIGHT)')
-    parser.add_argument('--log-level', '-l', type=str, default='INFO',
-                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-                        help='Log level (default: INFO)')
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    # Set log level first
-    set_level(args.log_level)
+    # Apply common args (log level, config loading)
+    config = apply_common_args(
+        args,
+        config_search_paths=[
+            os.path.join(PROJECT_DIR, "config.json"),
+            "/home/pi/aide-slideshow/config.json",
+            "/home/pi/config.json",
+        ],
+        config_defaults=DEFAULT_CONFIG
+    )
+    logger.info("Configuration loaded")
 
     # Override VIDEO_CONFIG based on command line args
     global VIDEO_CONFIG
@@ -462,18 +468,6 @@ def main():
             VIDEO_CONFIG['windowed_size'] = (int(w), int(h))
         except:
             pass
-
-    # Load config from multiple possible locations
-    config_paths = [
-        args.config,  # Command line override first
-        os.path.join(PROJECT_DIR, "config.json"),  # Parent of app/ (standard location)
-        "/home/pi/aide-slideshow/config.json",
-        "/home/pi/config.json",
-    ]
-    config_paths = [p for p in config_paths if p]  # Remove None
-
-    config = load_config(search_paths=config_paths, defaults=DEFAULT_CONFIG)
-    logger.info("Configuration loaded")
 
     # Apply command line overrides
     if args.image_dir:
