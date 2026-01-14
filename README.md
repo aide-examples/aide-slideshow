@@ -11,4 +11,4 @@ This project is part of [AIDE examples](https://github.com/aide-examples) - a se
 AIDE Slideshow contains a set of modules - *aide-frame* - which might be re-used in a different project.
 
 A detailled documentation is part of the system and can be viewed within its seb client once you install it.
-Ini the repo the files can be found under /app/docs
+Ini the repo the files can be found under [app/docs](app/docs)
