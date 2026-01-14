@@ -23,7 +23,7 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 # =============================================================================
-# PATH SETUP - Must be done before importing local modules
+# 1. PATH SETUP - Must be done before importing aide-frame
 # =============================================================================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,15 +40,13 @@ if os.path.isdir(AIDE_FRAME_PATH) and AIDE_FRAME_PATH not in sys.path:
     sys.path.insert(0, AIDE_FRAME_PATH)
 
 # =============================================================================
-# LOCAL MODULE IMPORTS
+# 2. AIDE-FRAME INIT - paths.init() MUST come before other aide-frame imports
 # =============================================================================
 
-# Initialize aide_frame paths first
 from aide_frame import paths
 paths.init(SCRIPT_DIR)
 
 # Register app-specific paths
-# Note: DOCS_DIR and HELP_DIR are auto-registered by DocsConfig if they exist in APP_DIR
 paths.register("WELCOME_DIR", os.path.join(paths.APP_DIR, ".welcome_cache"))
 # aide_frame docs: prefer submodule path, fallback to embedded
 if os.path.isdir(AIDE_FRAME_PATH):
@@ -56,10 +54,18 @@ if os.path.isdir(AIDE_FRAME_PATH):
 else:
     paths.register("AIDE_FRAME_DOCS_DIR", os.path.join(paths.APP_DIR, "aide_frame", "docs"))
 
+# =============================================================================
+# 3. AIDE-FRAME IMPORTS - Safe now that paths is initialized
+# =============================================================================
+
 from aide_frame.log import logger, set_level
 from aide_frame.platform_detect import PLATFORM, VIDEO_CONFIG
 from aide_frame.config import load_config
 from aide_frame.update import UpdateManager, get_local_version
+
+# =============================================================================
+# 4. APP-SPECIFIC IMPORTS
+# =============================================================================
 
 from utils import DEFAULT_CONFIG
 from utils.helpers import resolve_safe_path, get_or_create_welcome_image, prepare_job
