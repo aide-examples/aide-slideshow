@@ -8,13 +8,7 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>AIDE - slideshow</h1>
-            <div>
-                <a href="/help" class="header-link" title="Help">?</a>
-                <a href="/about" class="header-link">About</a>
-            </div>
-        </div>
+        <div id="app-header"></div>
 
         <div class="card">
             <div class="status-row">
@@ -98,6 +92,7 @@
         <p class="refresh-note">Auto-refreshes every 5 seconds</p>
     </div>
 
+    <script src="/static/frame/js/header-widget.js"></script>
     <script>
         let currentDuration = 35;
         let currentFilter = null;
@@ -229,6 +224,9 @@
         refreshStatus();
         loadFolders();
         loadVersion();
+
+        // Initialize header widget
+        HeaderWidget.init('#app-header', { appName: 'AIDE - slideshow' });
 
         // Auto-refresh every 5 seconds
         setInterval(refreshStatus, 5000);
