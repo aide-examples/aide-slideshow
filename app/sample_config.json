@@ -1,0 +1,24 @@
+{
+    "_comment": "Copy this file to config.json and customize as needed",
+
+    "image_dir": "img/show",
+    "upload_dir": "img/upload",
+    "display_duration": 35,
+    "fade_steps": 5,
+
+    "monitor_control": {
+        "provider": "none"
+    },
+
+    "motion_sensor": {
+        "provider": "none",
+        "idle_timeout": 300
+    },
+
+    "remote_control": {
+        "http_api": {
+            "enabled": true,
+            "port": 8080
+        }
+    }
+}
