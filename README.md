@@ -1,6 +1,6 @@
 # AIDE - Slideshow
 
-<img src="WallMonitor.png" style="float:right; max-width:30%; margin-left:20px; margin-bottom:10px;"/>
+<img src="app/docs/WallMonitor.png" style="float:right; max-width:250px; margin-left:20px; margin-bottom:10px;"/>
 
 A modular fullscreen photo slideshow with a plugin architecture for different hardware setups.
 
