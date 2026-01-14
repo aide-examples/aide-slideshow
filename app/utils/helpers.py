@@ -2,7 +2,6 @@
 Utility functions for the slideshow application.
 
 Contains:
-- Path security functions
 - File loading utilities
 - Welcome image generation
 - Image preparation job management
@@ -13,51 +12,7 @@ import threading
 
 from aide_frame import paths
 from aide_frame.log import logger
-
-
-# =============================================================================
-# PATH SECURITY
-# =============================================================================
-
-class PathSecurityError(ValueError):
-    """Raised when a path contains unsafe traversal sequences."""
-    pass
-
-
-def resolve_safe_path(path_str, base_dir=None):
-    """
-    Resolve a path safely, rejecting path traversal attempts.
-
-    Args:
-        path_str: Path from config (relative or absolute)
-        base_dir: Base directory for relative paths (defaults to PROJECT_DIR)
-
-    Returns:
-        Absolute path string
-
-    Raises:
-        PathSecurityError: If path contains '..' traversal sequences
-    """
-    paths.ensure_initialized()
-    if base_dir is None:
-        base_dir = paths.PROJECT_DIR
-
-    # Block path traversal sequences
-    if '..' in path_str:
-        raise PathSecurityError(f"Path traversal '..' not allowed in path: {path_str}")
-
-    # Resolve relative paths against base_dir
-    if os.path.isabs(path_str):
-        resolved = os.path.normpath(path_str)
-    else:
-        resolved = os.path.normpath(os.path.join(base_dir, path_str))
-
-    # Double-check the resolved path doesn't escape (belt and suspenders)
-    # This catches edge cases like paths with encoded sequences
-    if '..' in resolved:
-        raise PathSecurityError(f"Resolved path contains traversal: {resolved}")
-
-    return resolved
+from aide_frame.paths import PathSecurityError, resolve_safe_path
 
 
 # =============================================================================
