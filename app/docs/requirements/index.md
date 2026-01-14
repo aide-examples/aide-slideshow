@@ -17,7 +17,9 @@ Feature list from the user's perspective. Items marked with (*) are implemented.
   - Add image path and file name in decent small gray font (*)
   - transform images for "wrong screen orientation" - to be used with a monitor which is physically rotated by 90°
   - Offer art style borders/frames
-
+  - control backlight LED strips
+  - control a motor which turns the monitor by 90°
+  
 ## Control (How)
 
 - Via REST API (*)

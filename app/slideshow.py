@@ -48,7 +48,7 @@ from aide_frame import paths
 paths.init(SCRIPT_DIR)
 
 # Register app-specific paths
-paths.register("DOCS_DIR", os.path.join(paths.APP_DIR, "docs"))
+# Note: DOCS_DIR and HELP_DIR are auto-registered by DocsConfig if they exist in APP_DIR
 paths.register("WELCOME_DIR", os.path.join(paths.APP_DIR, ".welcome_cache"))
 # aide_frame docs: prefer submodule path, fallback to embedded
 if os.path.isdir(AIDE_FRAME_PATH):
