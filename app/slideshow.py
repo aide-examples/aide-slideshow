@@ -48,11 +48,7 @@ paths.init(SCRIPT_DIR)
 
 # Register app-specific paths
 paths.register("WELCOME_DIR", os.path.join(paths.APP_DIR, ".welcome_cache"))
-# aide_frame docs: prefer submodule path, fallback to embedded
-if os.path.isdir(AIDE_FRAME_PATH):
-    paths.register("AIDE_FRAME_DOCS_DIR", os.path.join(AIDE_FRAME_PATH, "aide_frame", "docs"))
-else:
-    paths.register("AIDE_FRAME_DOCS_DIR", os.path.join(paths.APP_DIR, "aide_frame", "docs"))
+# Note: AIDE_FRAME_DOCS_DIR is auto-registered by paths.init()
 
 # =============================================================================
 # 3. AIDE-FRAME IMPORTS - Safe now that paths is initialized
