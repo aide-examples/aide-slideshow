@@ -70,24 +70,7 @@
             </div>
         </div>
 
-        <div class="card" id="version-card" style="margin-top: 20px;">
-            <div class="status-row">
-                <span class="status-label" data-i18n="version">Version</span>
-                <span class="status-value" id="version-display">--</span>
-            </div>
-            <div class="status-row">
-                <span class="status-label" data-i18n="memory">Memory</span>
-                <span class="status-value" id="memory-display" style="font-size: 0.85em; color: #888;">--</span>
-            </div>
-            <div class="status-row" id="update-row" style="display: none;">
-                <span class="status-label" data-i18n="update">Update</span>
-                <a href="/update" class="status-value" style="color: #60a5fa; text-decoration: none;" data-i18n="available">Available</a>
-            </div>
-            <div style="display: flex; gap: 10px; margin-top: 10px;">
-                <a href="/update" class="version-link" style="flex: 1;" data-i18n="system_update">System Update</a>
-                <button onclick="restartServer()" class="secondary" style="padding: 8px 12px; font-size: 0.85em;" data-i18n="restart">Restart</button>
-            </div>
-        </div>
+        <div id="status-widget"></div>
 
         <p class="refresh-note" data-i18n="auto_refresh">Auto-refresh every 5 seconds</p>
     </div>
@@ -95,6 +78,7 @@
     <script src="/static/frame/vendor/polyglot/polyglot.min.js"></script>
     <script src="/static/frame/js/i18n.js"></script>
     <script src="/static/frame/js/header-widget.js"></script>
+    <script src="/static/frame/js/status-widget.js"></script>
     <script src="/static/slide/slide.js"></script>
 </body>
 </html>

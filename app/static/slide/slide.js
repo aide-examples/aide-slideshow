@@ -41,13 +41,6 @@ async function refreshStatus() {
         currentDuration = data.display_duration;
         document.getElementById('duration').textContent = currentDuration;
 
-        // Update memory display
-        if (data.memory) {
-            const mem = data.memory;
-            document.getElementById('memory-display').textContent =
-                `${mem.used_mb}/${mem.total_mb} MB (${mem.percent_used}%)`;
-        }
-
         updateFolderButtons();
     } catch (e) {
         console.error('Status error:', e);
@@ -98,32 +91,6 @@ async function changeDuration(delta) {
     document.getElementById('duration').textContent = currentDuration;
 }
 
-async function loadVersion() {
-    try {
-        const res = await fetch('/api/update/status');
-        const data = await res.json();
-        document.getElementById('version-display').textContent = data.current_version || '--';
-        const updateRow = document.getElementById('update-row');
-        if (data.update_available) {
-            updateRow.style.display = 'flex';
-        } else {
-            updateRow.style.display = 'none';
-        }
-    } catch (e) {
-        console.error('Version error:', e);
-    }
-}
-
-async function restartServer() {
-    if (confirm(i18n.t('restart_confirm'))) {
-        try {
-            await fetch('/restart');
-            alert(i18n.t('restarting'));
-        } catch (e) {
-            // Expected - server stops before responding
-        }
-    }
-}
 
 // Initialize on DOM ready
 (async () => {
@@ -138,12 +105,11 @@ async function restartServer() {
     // Initial load
     refreshStatus();
     loadFolders();
-    loadVersion();
 
-    // Initialize header widget
+    // Initialize widgets
     HeaderWidget.init('#app-header', { appName: i18n.t('app_title') });
+    StatusWidget.init('#status-widget');
 
     // Auto-refresh every 5 seconds
     setInterval(refreshStatus, 5000);
-    setInterval(loadVersion, 30000);  // Check version every 30s
 })();
