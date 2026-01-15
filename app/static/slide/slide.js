@@ -107,7 +107,7 @@ async function changeDuration(delta) {
     loadFolders();
 
     // Initialize widgets
-    HeaderWidget.init('#app-header', { appName: i18n.t('app_title'), showGoogleTranslate: true });
+    HeaderWidget.init('#app-header', { appName: i18n.t('app_title') });
     StatusWidget.init('#status-widget');
 
     // Auto-refresh every 5 seconds
