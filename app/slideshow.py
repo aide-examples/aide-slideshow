@@ -450,8 +450,8 @@ def main():
     config = apply_common_args(
         args,
         config_search_paths=[
+            os.path.join(SCRIPT_DIR, "config.json"),
             os.path.join(PROJECT_DIR, "config.json"),
-            "/home/pi/aide-slideshow/config.json",
             "/home/pi/config.json",
         ],
         config_defaults=DEFAULT_CONFIG
