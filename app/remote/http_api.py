@@ -11,6 +11,7 @@ Endpoints:
 - GET /duration?seconds=N - Set display duration
 - GET /filter?folder=NAME - Filter by folder
 - GET /filter/clear - Clear filter
+- GET /orientation?mode=MODE - Set orientation (auto, landscape, portrait_left, portrait_right)
 - GET /monitor/on - Turn monitor on
 - GET /monitor/off - Turn monitor off
 """
@@ -90,6 +91,15 @@ class SlideshowHandler(http_server.JsonHandler):
             _controller.execute_action("monitor_off")
             return {"success": True, "monitor_on": False}
 
+        if path == '/orientation':
+            if 'mode' in params:
+                mode = params['mode']
+                if mode in ('auto', 'landscape', 'portrait_left', 'portrait_right'):
+                    _controller.execute_action("set_orientation", {"mode": mode})
+                    return {"success": True, "orientation": mode}
+                return {"error": "Invalid mode. Use: auto, landscape, portrait_left, portrait_right"}, 400
+            return {"error": "Missing 'mode' parameter"}, 400
+
         if path == '/restart':
             return restart_server()
 
@@ -146,6 +156,7 @@ class SlideshowHandler(http_server.JsonHandler):
                 "GET /duration?seconds=N - Set display duration",
                 "GET /filter?folder=NAME - Show only images from folder",
                 "GET /filter/clear - Clear folder filter",
+                "GET /orientation?mode=MODE - Set orientation (auto, landscape, portrait_left, portrait_right)",
                 "GET /folders - List available folders",
                 "GET /monitor/on - Turn monitor on",
                 "GET /monitor/off - Turn monitor off",

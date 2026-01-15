@@ -56,6 +56,37 @@ echo "on 0" | cec-client -s -d 1       # TV on
 
 See [Monitor Control](../implementation/monitor-control.md) for configuration.
 
+## Samsung The Frame TV
+
+When using Samsung The Frame TV as a display, special configuration is required for portrait mode.
+
+### Portrait Mode Setup
+
+Samsung The Frame has an "auto-rotate" feature that interferes with portrait orientation from HDMI sources. To disable this:
+
+1. Press **Home/Settings** on the Samsung remote
+2. Go to **Connected Devices** and select your HDMI input (e.g., HDMI 1)
+3. Press **Down arrow**, then select **Edit**
+4. Change **Device Type** to **PC**
+5. Confirm and exit
+
+This tells the TV to pass through the HDMI signal without automatic rotation, allowing the slideshow to control orientation via the Web UI.
+
+### How Portrait Mode Works
+
+When the TV is physically mounted in portrait orientation:
+
+1. The HDMI signal remains 1920x1080 (landscape buffer)
+2. The slideshow rotates images 90° before display
+3. Samsung Frame displays the buffer as-is (no auto-rotation in PC mode)
+4. The physically rotated TV shows the image upright
+
+Use the Web UI orientation buttons to switch between:
+- **Auto**: Show all images (default)
+- **Portrait Left**: For TVs rotated counter-clockwise
+- **Portrait Right**: For TVs rotated clockwise
+- **Landscape**: Show only landscape images
+
 ## GPIO Connections
 
 ### PIR Motion Sensor (HC-SR501)

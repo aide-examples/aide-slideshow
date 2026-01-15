@@ -59,6 +59,16 @@
             </div>
         </div>
 
+        <div class="orientation-control">
+            <label data-i18n="orientation">Orientation</label>
+            <div class="orientation-row" id="orientation-buttons">
+                <button class="orientation-btn" onclick="setOrientation('auto')" data-mode="auto" data-i18n="orient_auto">Auto</button>
+                <button class="orientation-btn" onclick="setOrientation('landscape')" data-mode="landscape" data-i18n="orient_landscape">Landscape</button>
+                <button class="orientation-btn" onclick="setOrientation('portrait_left')" data-mode="portrait_left" data-i18n="orient_portrait_left">Portrait L</button>
+                <button class="orientation-btn" onclick="setOrientation('portrait_right')" data-mode="portrait_right" data-i18n="orient_portrait_right">Portrait R</button>
+            </div>
+        </div>
+
         <div class="folders">
             <h3 data-i18n="filter_folder">Filter by Folder</h3>
             <div class="folder-list" id="folder-list">

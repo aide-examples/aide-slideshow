@@ -95,6 +95,11 @@ class Slideshow:
         self.upload_dir = resolve_safe_path(config.get("upload_dir", default_upload))
         self.current_filter = None
 
+        # Display orientation: 'auto', 'landscape', 'portrait_left', 'portrait_right'
+        # 'auto' shows all images, others filter by aspect ratio
+        # portrait_left/right rotate images for physically rotated monitors
+        self.orientation = config.get("orientation", "auto")
+
         # Alexa control reference (set externally if enabled)
         self.alexa_control = None
 
@@ -163,6 +168,7 @@ class Slideshow:
         self.current_img = None
         self.current_path = None
         self._skip_requested = False
+        self._pending_resize = False
 
         self.lock = threading.Lock()
 
@@ -201,7 +207,7 @@ class Slideshow:
         return images
 
     def _scan_directory(self, directory):
-        """Scan a directory recursively for images."""
+        """Scan a directory recursively for images, filtered by orientation."""
         images = []
         if not os.path.isdir(directory):
             return images
@@ -210,8 +216,26 @@ class Slideshow:
                 continue
             for f in files:
                 if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    images.append(os.path.join(root, f))
+                    path = os.path.join(root, f)
+                    if self._matches_orientation(path):
+                        images.append(path)
         return images
+
+    def _matches_orientation(self, path):
+        """Check if image matches current orientation filter (reads only header)."""
+        if self.orientation == 'auto':
+            return True
+        try:
+            from PIL import Image
+            with Image.open(path) as img:
+                w, h = img.size
+            is_portrait = h > w
+            if self.orientation in ('portrait_left', 'portrait_right'):
+                return is_portrait
+            else:  # landscape
+                return not is_portrait
+        except Exception:
+            return True  # Include on error
 
     def fade_transition(self, next_img):
         steps = self.fade_steps
@@ -256,6 +280,7 @@ class Slideshow:
                 "display_duration": self.display_duration,
                 "current_image": self.current_path,
                 "filter": self.current_filter,
+                "orientation": self.orientation,
                 "playlist_size": len(self.playlist)
             }
             mem = self.get_memory_info()
@@ -272,13 +297,35 @@ class Slideshow:
         with self.lock:
             self.current_filter = folder_filter
             self.playlist = []
+            self._skip_requested = True  # Show image from new folder immediately
             logger.info(f"Filter set to: {folder_filter}")
 
     def clear_filter(self):
         with self.lock:
             self.current_filter = None
             self.playlist = []
+            self._skip_requested = True  # Show image immediately
             logger.info("Filter cleared")
+
+    def set_orientation(self, orientation):
+        """Set display orientation filter: 'auto', 'landscape', 'portrait_left', or 'portrait_right'."""
+        valid = ('auto', 'landscape', 'portrait_left', 'portrait_right')
+        with self.lock:
+            if orientation not in valid:
+                logger.warning(f"Invalid orientation: {orientation}")
+                return
+            old_orientation = self.orientation
+            self.orientation = orientation
+            self.playlist = []  # Force reload with new filter
+            self._skip_requested = True  # Show next image immediately with new orientation
+            logger.info(f"Orientation set to: {orientation}")
+
+            # WSL2/windowed mode: flag for resize (must happen in main thread)
+            if PLATFORM == 'wsl2' or not VIDEO_CONFIG.get('fullscreen', True):
+                is_portrait_now = orientation.startswith('portrait')
+                was_portrait = old_orientation.startswith('portrait')
+                if is_portrait_now != was_portrait:
+                    self._pending_resize = True
 
     def pause(self):
         with self.lock:
@@ -297,6 +344,19 @@ class Slideshow:
 
     def _handle_pygame_events(self):
         """Process pygame events (keyboard, window close, resize)."""
+        # Handle pending orientation resize (must be in main thread)
+        if self._pending_resize:
+            self._pending_resize = False
+            self.width, self.height = self.height, self.width
+            self.screen = pygame.display.set_mode(
+                (self.width, self.height),
+                pygame.DOUBLEBUF | pygame.RESIZABLE
+            )
+            self.fade_surface = pygame.Surface((self.width, self.height)).convert()
+            self.fade_surface.fill((0, 0, 0))
+            self.current_img = None  # Force reload at new size
+            logger.debug(f"Window resized to {self.width}x{self.height}")
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -319,7 +379,6 @@ class Slideshow:
                     if not VIDEO_CONFIG.get('fullscreen', True):
                         pygame.display.toggle_fullscreen()
             elif event.type == pygame.VIDEORESIZE:
-                # Handle window resize
                 self.width, self.height = event.w, event.h
                 self.screen = pygame.display.set_mode(
                     (self.width, self.height),
@@ -392,7 +451,18 @@ class Slideshow:
 
             try:
                 img = pygame.image.load(path)
-                img = pygame.transform.scale(img, (self.width, self.height)).convert()
+
+                # Portrait mode on fullscreen: rotate image to match physical monitor orientation
+                # KMSDRM (Raspi) can't resize window, so we rotate the image instead
+                # Scale to swapped dimensions (height x width), then rotate for monitor orientation
+                if self.orientation.startswith('portrait') and VIDEO_CONFIG.get('fullscreen', True):
+                    img = pygame.transform.scale(img, (self.height, self.width))
+                    # portrait_left: monitor rotated CCW, rotate image CW (+90)
+                    # portrait_right: monitor rotated CW, rotate image CCW (-90)
+                    angle = 90 if self.orientation == 'portrait_left' else -90
+                    img = pygame.transform.rotate(img, angle).convert()
+                else:
+                    img = pygame.transform.scale(img, (self.width, self.height)).convert()
             except Exception as e:
                 logger.error(f"Error loading {path}: {e}")
                 continue

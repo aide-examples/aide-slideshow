@@ -24,6 +24,32 @@
     color: #333;
 }
 
+/* Orientation Control */
+.orientation-control {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+.orientation-control label { display: block; margin-bottom: 10px; color: #666; }
+.orientation-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.orientation-btn {
+    flex: 1 1 auto;
+    min-width: 70px;
+    background: #e5e7eb;
+    color: #374151;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    border: 2px solid transparent;
+}
+.orientation-btn.active {
+    background: #2563eb;
+    color: #fff;
+    border-color: #1d4ed8;
+}
+
 /* Folders / Filter Section */
 .folders {
     background: #fff;

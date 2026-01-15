@@ -88,6 +88,11 @@ class RemoteControlProvider(ABC):
             if folder:
                 self.slideshow.set_filter(folder)
 
+        elif action == "set_orientation":
+            mode = params.get("mode")
+            if mode:
+                self.slideshow.set_orientation(mode)
+
         elif action.startswith("filter_"):
             # Handle numbered filter shortcuts
             folder = params.get(action)

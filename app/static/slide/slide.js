@@ -4,6 +4,7 @@
 
 let currentDuration = 35;
 let currentFilter = null;
+let currentOrientation = 'auto';
 
 async function api(endpoint) {
     try {
@@ -40,6 +41,9 @@ async function refreshStatus() {
 
         currentDuration = data.display_duration;
         document.getElementById('duration').textContent = currentDuration;
+
+        currentOrientation = data.orientation || 'auto';
+        updateOrientationButtons();
 
         updateFolderButtons();
     } catch (e) {
@@ -89,6 +93,18 @@ async function changeDuration(delta) {
     currentDuration = Math.max(5, Math.min(120, currentDuration + delta));
     await fetch('/duration?seconds=' + currentDuration);
     document.getElementById('duration').textContent = currentDuration;
+}
+
+async function setOrientation(mode) {
+    await fetch('/orientation?mode=' + encodeURIComponent(mode));
+    refreshStatus();
+}
+
+function updateOrientationButtons() {
+    document.querySelectorAll('.orientation-btn').forEach(btn => {
+        const isActive = btn.dataset.mode === currentOrientation;
+        btn.classList.toggle('active', isActive);
+    });
 }
 
 
