@@ -21,22 +21,22 @@ async function refreshStatus() {
         const res = await fetch('/status');
         const data = await res.json();
 
-        document.getElementById('status-paused').textContent =
-            data.paused ? i18n.t('paused') : i18n.t('playing');
-        document.getElementById('status-paused').className =
-            'status-value ' + (data.paused ? 'off' : 'on');
+        const pausedEl = document.getElementById('status-paused');
+        pausedEl.textContent = data.paused ? i18n.t('paused') : i18n.t('playing');
+        pausedEl.className = 'status-value notranslate ' + (data.paused ? 'off' : 'on');
 
-        document.getElementById('status-monitor').textContent =
-            data.monitor_on ? i18n.t('on') : i18n.t('off');
-        document.getElementById('status-monitor').className =
-            'status-value ' + (data.monitor_on ? 'on' : 'off');
+        const monitorEl = document.getElementById('status-monitor');
+        monitorEl.textContent = data.monitor_on ? i18n.t('on') : i18n.t('off');
+        monitorEl.className = 'status-value notranslate ' + (data.monitor_on ? 'on' : 'off');
 
-        document.getElementById('status-playlist').textContent =
-            i18n.t('remaining', { count: data.playlist_size });
+        const playlistEl = document.getElementById('status-playlist');
+        playlistEl.textContent = i18n.t('remaining', { count: data.playlist_size });
+        playlistEl.classList.add('notranslate');
 
         currentFilter = data.filter;
-        document.getElementById('status-filter').textContent =
-            data.filter || i18n.t('none');
+        const filterEl = document.getElementById('status-filter');
+        filterEl.textContent = data.filter || i18n.t('none');
+        filterEl.classList.add('notranslate');
 
         currentDuration = data.display_duration;
         document.getElementById('duration').textContent = currentDuration;
@@ -52,10 +52,10 @@ async function loadFolders() {
         const res = await fetch('/folders');
         const data = await res.json();
         const list = document.getElementById('folder-list');
-        list.innerHTML = `<button class="folder-btn" onclick="clearFilter()">${i18n.t('all')}</button>`;
+        list.innerHTML = `<button class="folder-btn notranslate" onclick="clearFilter()">${i18n.t('all')}</button>`;
         data.folders.forEach(folder => {
             const btn = document.createElement('button');
-            btn.className = 'folder-btn';
+            btn.className = 'folder-btn notranslate';
             btn.textContent = folder.split('/').pop();
             btn.title = folder;
             btn.onclick = () => setFilter(folder);
@@ -107,7 +107,7 @@ async function changeDuration(delta) {
     loadFolders();
 
     // Initialize widgets
-    HeaderWidget.init('#app-header', { appName: i18n.t('app_title') });
+    HeaderWidget.init('#app-header', { appName: i18n.t('app_title'), showGoogleTranslate: true });
     StatusWidget.init('#status-widget');
 
     // Auto-refresh every 5 seconds
