@@ -12,46 +12,46 @@
 
         <div class="card">
             <div class="status-row">
-                <span class="status-label">Status</span>
-                <span class="status-value" id="status-paused">Loading...</span>
+                <span class="status-label" data-i18n="status"></span>
+                <span class="status-value" id="status-paused">--</span>
             </div>
             <div class="status-row">
-                <span class="status-label">Monitor</span>
+                <span class="status-label" data-i18n="monitor"></span>
                 <span class="status-value" id="status-monitor">--</span>
             </div>
             <div class="status-row">
-                <span class="status-label">Images</span>
+                <span class="status-label" data-i18n="images"></span>
                 <span class="status-value" id="status-playlist">--</span>
             </div>
             <div class="status-row">
-                <span class="status-label">Filter</span>
+                <span class="status-label" data-i18n="filter"></span>
                 <span class="status-value" id="status-filter">--</span>
             </div>
         </div>
 
         <div class="controls">
             <button onclick="api('pause')" class="secondary">
-                <span class="icon">⏸</span> Pause
+                <span class="icon">⏸</span> <span data-i18n="pause"></span>
             </button>
             <button onclick="api('resume')">
-                <span class="icon">▶</span> Play
+                <span class="icon">▶</span> <span data-i18n="play"></span>
             </button>
             <button onclick="api('skip')" class="secondary">
-                <span class="icon">⏭</span> Skip
+                <span class="icon">⏭</span> <span data-i18n="skip"></span>
             </button>
             <button onclick="api('monitor/on')" class="secondary">
-                <span class="icon">📺</span> Mon ON
+                <span class="icon">📺</span> <span data-i18n="mon_on"></span>
             </button>
             <button onclick="api('monitor/off')" class="secondary">
-                <span class="icon">🌙</span> Mon OFF
+                <span class="icon">🌙</span> <span data-i18n="mon_off"></span>
             </button>
             <button onclick="refreshStatus()" class="secondary">
-                <span class="icon">🔄</span> Refresh
+                <span class="icon">🔄</span> <span data-i18n="refresh"></span>
             </button>
         </div>
 
         <div class="speed-control">
-            <label>Display Duration</label>
+            <label data-i18n="duration"></label>
             <div class="speed-row">
                 <button onclick="changeDuration(-5)" class="secondary">−5</button>
                 <div class="speed-value"><span id="duration">--</span>s</div>
@@ -60,38 +60,40 @@
         </div>
 
         <div class="folders">
-            <h3>Filter by Folder</h3>
+            <h3 data-i18n="filter_folder"></h3>
             <div class="folder-list" id="folder-list">
-                <button class="folder-btn" onclick="clearFilter()">All</button>
+                <button class="folder-btn" onclick="clearFilter()" data-i18n="all"></button>
             </div>
             <div class="links-row">
-                <a id="file-manager-link" href="#" target="_blank">File Manager</a>
-                <a href="/prepare">Image Preparation</a>
+                <a id="file-manager-link" href="#" target="_blank" data-i18n="file_manager"></a>
+                <a href="/prepare" data-i18n="image_prep"></a>
             </div>
         </div>
 
         <div class="card" id="version-card" style="margin-top: 20px;">
             <div class="status-row">
-                <span class="status-label">Version</span>
+                <span class="status-label" data-i18n="version"></span>
                 <span class="status-value" id="version-display">--</span>
             </div>
             <div class="status-row">
-                <span class="status-label">Memory</span>
+                <span class="status-label" data-i18n="memory"></span>
                 <span class="status-value" id="memory-display" style="font-size: 0.85em; color: #888;">--</span>
             </div>
             <div class="status-row" id="update-row" style="display: none;">
-                <span class="status-label">Update</span>
-                <a href="/update" class="status-value" style="color: #60a5fa; text-decoration: none;">Available</a>
+                <span class="status-label" data-i18n="update"></span>
+                <a href="/update" class="status-value" style="color: #60a5fa; text-decoration: none;" data-i18n="available"></a>
             </div>
             <div style="display: flex; gap: 10px; margin-top: 10px;">
-                <a href="/update" class="version-link" style="flex: 1;">System Update</a>
-                <button onclick="restartServer()" class="secondary" style="padding: 8px 12px; font-size: 0.85em;">Restart</button>
+                <a href="/update" class="version-link" style="flex: 1;" data-i18n="system_update"></a>
+                <button onclick="restartServer()" class="secondary" style="padding: 8px 12px; font-size: 0.85em;" data-i18n="restart"></button>
             </div>
         </div>
 
-        <p class="refresh-note">Auto-refreshes every 5 seconds</p>
+        <p class="refresh-note" data-i18n="auto_refresh"></p>
     </div>
 
+    <script src="/static/frame/js/polyglot.min.js"></script>
+    <script src="/static/frame/js/i18n.js"></script>
     <script src="/static/frame/js/header-widget.js"></script>
     <script>
         let currentDuration = 35;
@@ -114,21 +116,21 @@
                 const data = await res.json();
 
                 document.getElementById('status-paused').textContent =
-                    data.paused ? 'Paused' : 'Playing';
+                    data.paused ? i18n.t('paused') : i18n.t('playing');
                 document.getElementById('status-paused').className =
                     'status-value ' + (data.paused ? 'off' : 'on');
 
                 document.getElementById('status-monitor').textContent =
-                    data.monitor_on ? 'ON' : 'OFF';
+                    data.monitor_on ? i18n.t('on') : i18n.t('off');
                 document.getElementById('status-monitor').className =
                     'status-value ' + (data.monitor_on ? 'on' : 'off');
 
                 document.getElementById('status-playlist').textContent =
-                    data.playlist_size + ' remaining';
+                    i18n.t('remaining', { count: data.playlist_size });
 
                 currentFilter = data.filter;
                 document.getElementById('status-filter').textContent =
-                    data.filter || 'None';
+                    data.filter || i18n.t('none');
 
                 currentDuration = data.display_duration;
                 document.getElementById('duration').textContent = currentDuration;
@@ -151,7 +153,7 @@
                 const res = await fetch('/folders');
                 const data = await res.json();
                 const list = document.getElementById('folder-list');
-                list.innerHTML = '<button class="folder-btn" onclick="clearFilter()">All</button>';
+                list.innerHTML = `<button class="folder-btn" onclick="clearFilter()">${i18n.t('all')}</button>`;
                 data.folders.forEach(folder => {
                     const btn = document.createElement('button');
                     btn.className = 'folder-btn';
@@ -166,8 +168,9 @@
         }
 
         function updateFolderButtons() {
+            const allText = i18n.t('all');
             document.querySelectorAll('.folder-btn').forEach(btn => {
-                const isAll = btn.textContent === 'All';
+                const isAll = btn.textContent === allText;
                 const isActive = isAll ? !currentFilter : btn.title === currentFilter;
                 btn.classList.toggle('active', isActive);
             });
@@ -210,27 +213,34 @@
         }
 
         async function restartServer() {
-            if (confirm('Restart the slideshow server?')) {
+            if (confirm(i18n.t('restart_confirm'))) {
                 try {
                     await fetch('/restart');
-                    alert('Server is restarting...');
+                    alert(i18n.t('restarting'));
                 } catch (e) {
                     // Expected - server stops before responding
                 }
             }
         }
 
-        // Initial load
-        refreshStatus();
-        loadFolders();
-        loadVersion();
+        // Initialize
+        (async () => {
+            await i18n.init();
+            document.title = i18n.t('app_title');
+            i18n.applyToDOM();
 
-        // Initialize header widget
-        HeaderWidget.init('#app-header', { appName: 'AIDE - slideshow' });
+            // Initial load
+            refreshStatus();
+            loadFolders();
+            loadVersion();
 
-        // Auto-refresh every 5 seconds
-        setInterval(refreshStatus, 5000);
-        setInterval(loadVersion, 30000);  // Check version every 30s
+            // Initialize header widget
+            HeaderWidget.init('#app-header', { appName: i18n.t('app_title') });
+
+            // Auto-refresh every 5 seconds
+            setInterval(refreshStatus, 5000);
+            setInterval(loadVersion, 30000);  // Check version every 30s
+        })();
     </script>
 </body>
 </html>
