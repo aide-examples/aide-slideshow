@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title data-i18n="prep_title">Image Preparation</title>
+    <link rel="stylesheet" href="/static/css/common.css">
+</head>
+<body>
+    <div class="container wide">
+        <div class="header">
+            <a href="/" class="back-link">&larr; <span data-i18n="back">Back</span></a>
+            <h1 data-i18n="prep_title">Image Preparation</h1>
+            <a href="/help" class="header-link" data-i18n-title="help" title="Help">?</a>
+        </div>
+
+        <div id="message-area"></div>
+
+        <!-- Configuration Form -->
+        <div class="card" id="config-card">
+            <h3 data-i18n="prep_directories">Directories</h3>
+            <div class="form-group">
+                <label data-i18n="prep_input_dir">Input Directory</label>
+                <input type="text" id="input_dir" data-i18n-placeholder="prep_input_placeholder" placeholder="/path/to/source/images">
+                <p class="help-text" data-i18n="prep_input_help">Source folder with original images</p>
+            </div>
+            <div class="form-group">
+                <label data-i18n="prep_output_dir">Output Directory</label>
+                <input type="text" id="output_dir" data-i18n-placeholder="prep_output_placeholder" placeholder="/path/to/output/images">
+                <p class="help-text" data-i18n="prep_output_help">Destination for processed images</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 data-i18n="prep_mode">Processing Mode</h3>
+            <div class="form-group">
+                <label data-i18n="prep_resize_mode">Resize Mode</label>
+                <select id="mode">
+                    <option value="hybrid-stretch" data-i18n="prep_mode_hybrid_stretch">Hybrid + Stretch (recommended)</option>
+                    <option value="hybrid" data-i18n="prep_mode_hybrid">Hybrid (crop then pad)</option>
+                    <option value="crop" data-i18n="prep_mode_crop">Crop only</option>
+                    <option value="pad" data-i18n="prep_mode_pad">Pad only</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label data-i18n="prep_target_size">Target Size</label>
+                    <select id="target_size">
+                        <option value="1920x1080">1920x1080 (Full HD)</option>
+                        <option value="1280x720">1280x720 (HD)</option>
+                        <option value="2560x1440">2560x1440 (QHD)</option>
+                        <option value="3840x2160">3840x2160 (4K)</option>
+                        <option value="1080x1920">1080x1920 (Full HD - Portrait)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="prep_padding_color">Padding Color</label>
+                    <select id="pad_mode">
+                        <option value="average" data-i18n="prep_pad_average">Average (auto)</option>
+                        <option value="black" data-i18n="prep_pad_black">Black</option>
+                        <option value="white" data-i18n="prep_pad_white">White</option>
+                        <option value="gray" data-i18n="prep_pad_gray">Gray</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 data-i18n="prep_advanced">Advanced Settings</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label data-i18n="prep_crop_min">Crop Min (0.0-1.0)</label>
+                    <input type="number" id="crop_min" value="0.8" min="0" max="1" step="0.05">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="prep_stretch_max">Stretch Max</label>
+                    <input type="number" id="stretch_max" value="0.2" min="0" max="0.5" step="0.05">
+                </div>
+            </div>
+            <div class="form-group">
+                <label data-i18n="prep_no_stretch_limit">No-Stretch Limit</label>
+                <input type="number" id="no_stretch_limit" value="0.4" min="0" max="1" step="0.1">
+                <p class="help-text" data-i18n="prep_no_stretch_help">Aspect ratio deviation beyond which no stretching occurs</p>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="skip_existing">
+                <label for="skip_existing" data-i18n="prep_skip_existing">Skip existing files</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="flatten">
+                <label for="flatten" data-i18n="prep_flatten">Flatten output (no subdirectories)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="show_text" checked>
+                <label for="show_text" data-i18n="prep_show_text">Overlay filename on images</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="dry_run">
+                <label for="dry_run" data-i18n="prep_dry_run">Dry run (preview only, no changes)</label>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="btn-row">
+                <button onclick="countImages()" class="secondary" data-i18n="prep_count">Count Images</button>
+                <button onclick="startJob()" data-i18n="prep_start">Start Processing</button>
+            </div>
+        </div>
+
+        <!-- Progress Display -->
+        <div class="card progress-card" id="progress-card">
+            <h3 data-i18n="prep_progress">Progress</h3>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar">0%</div>
+            </div>
+            <div class="progress-stats">
+                <div class="stat-box">
+                    <div class="stat-value processed" id="stat-processed">0</div>
+                    <div class="stat-label" data-i18n="prep_processed">Processed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value exists" id="stat-exists">0</div>
+                    <div class="stat-label" data-i18n="prep_skipped">Skipped</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value error" id="stat-errors">0</div>
+                    <div class="stat-label" data-i18n="prep_errors">Errors</div>
+                </div>
+            </div>
+            <div class="current-file" id="current-file" data-i18n="prep_waiting">Waiting...</div>
+            <button onclick="cancelJob()" class="danger wide" id="cancel-btn" style="margin-top: 15px;" data-i18n="prep_cancel">Cancel</button>
+        </div>
+
+        <div class="nav-links">
+            <a href="/" data-i18n="slideshow_control">Slideshow Control</a>
+            <a id="file-manager-link" href="#" target="_blank" data-i18n="file_manager">File Manager</a>
+            <a href="/about" data-i18n="about">About</a>
+        </div>
+    </div>
+
+    <script src="/static/frame/vendor/polyglot/polyglot.min.js"></script>
+    <script src="/static/frame/js/i18n.js"></script>
+    <script src="/static/prepare/prepare.js"></script>
+</body>
+</html>

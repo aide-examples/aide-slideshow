@@ -16,14 +16,12 @@ Endpoints:
 """
 
 import os
-import time
 import threading
-import socket
 from http.server import HTTPServer
 
-from aide_frame import paths, http_routes, http_server
+from aide_frame import paths, http_routes, http_server, update_routes
+from aide_frame.http_server import get_server_url, restart_server
 from aide_frame.log import logger
-from utils.helpers import load_static_file, load_readme
 from . import RemoteControlProvider
 
 
@@ -41,7 +39,6 @@ DOCS_CONFIG = http_routes.DocsConfig(
 
 # Module-level references (set by HTTPAPIRemoteControl)
 _controller = None
-_update_manager = None
 _prepare_job = None
 
 
@@ -51,22 +48,7 @@ class SlideshowHandler(http_server.JsonHandler):
     def get(self, path, params):
         # Serve web UI at root
         if path == '/' or path == '/index.html':
-            return self._serve_static('index.html')
-
-        # Serve static files from /static/ path
-        if path.startswith('/static/'):
-            filename = path[8:]
-            if '..' in filename or filename.startswith('/'):
-                return {"error": "Forbidden"}, 403
-            return self._serve_static(filename)
-
-        # Serve update page
-        if path == '/update' or path == '/update.html':
-            return self._serve_static('update.html')
-
-        # Serve README.md content as JSON
-        if path == '/readme':
-            return {"content": load_readme()}
+            return self.file('slide/slide.html')
 
         if path == '/status':
             return _controller.slideshow.get_status()
@@ -109,11 +91,7 @@ class SlideshowHandler(http_server.JsonHandler):
             return {"success": True, "monitor_on": False}
 
         if path == '/restart':
-            def delayed_exit():
-                time.sleep(0.5)
-                os._exit(0)
-            threading.Thread(target=delayed_exit, daemon=True).start()
-            return {"success": True, "message": "Restarting..."}
+            return restart_server()
 
         if path == '/folders':
             folders = set()
@@ -126,15 +104,9 @@ class SlideshowHandler(http_server.JsonHandler):
                     folders.add(os.path.join(rel_root, d) if rel_root != '.' else d)
             return {"folders": sorted(folders)}
 
-        # Update API endpoints
-        if path == '/api/update/status':
-            if _update_manager:
-                return _update_manager.get_status()
-            return {"error": "Update manager not initialized"}, 500
-
         # Image preparation endpoints
         if path == '/prepare' or path == '/prepare.html':
-            return self._serve_static('prepare.html')
+            return self.file('prepare/prepare.html')
 
         if path == '/api/prepare/status':
             if _prepare_job:
@@ -191,58 +163,15 @@ class SlideshowHandler(http_server.JsonHandler):
         }
 
     def post(self, path, data):
-        if path == '/api/update/check':
-            if _update_manager:
-                return _update_manager.check_for_updates()
-            return {"error": "Update manager not initialized"}, 500
-
-        if path == '/api/update/download':
-            if _update_manager:
-                return _update_manager.download_update()
-            return {"error": "Update manager not initialized"}, 500
-
-        if path == '/api/update/apply':
-            if _update_manager:
-                return _update_manager.apply_update()
-            return {"error": "Update manager not initialized"}, 500
-
-        if path == '/api/update/rollback':
-            if _update_manager:
-                return _update_manager.rollback()
-            return {"error": "Update manager not initialized"}, 500
-
-        if path == '/api/update/enable':
-            if _update_manager:
-                return _update_manager.enable_updates()
-            return {"error": "Update manager not initialized"}, 500
-
         if path == '/api/prepare/start':
             return self._handle_prepare_start(data)
 
         return {"error": "Unknown endpoint"}, 404
 
-    def _serve_static(self, filename):
-        """Serve a static file."""
-        ext = os.path.splitext(filename)[1].lower()
-        is_binary = ext in ('.png', '.jpg', '.jpeg', '.ico')
-        content = load_static_file(filename, binary=is_binary)
-
-        if content is None:
-            return {"error": f"File not found: {filename}"}, 404
-
-        mime_type = paths.MIME_TYPES.get(ext, 'application/octet-stream')
-        if is_binary:
-            self.send_response(200)
-            self.send_header('Content-Type', mime_type)
-            self.end_headers()
-            self.wfile.write(content)
-        else:
-            self.send_text(content, mime_type)
-        return None  # Already handled
-
     def _handle_prepare_count(self, params):
         """Handle /api/prepare/count endpoint."""
-        from utils.helpers import resolve_safe_path, PathSecurityError, get_imgPrepare
+        from aide_frame.paths import resolve_safe_path, PathSecurityError
+        from utils.helpers import get_imgPrepare
 
         dir_param = params.get('dir', _controller.slideshow.image_dir)
         try:
@@ -259,7 +188,8 @@ class SlideshowHandler(http_server.JsonHandler):
 
     def _handle_prepare_start(self, data):
         """Handle /api/prepare/start endpoint."""
-        from utils.helpers import resolve_safe_path, PathSecurityError, get_imgPrepare
+        from aide_frame.paths import resolve_safe_path, PathSecurityError
+        from utils.helpers import get_imgPrepare
         from pathlib import Path as PathLib
 
         module = get_imgPrepare()
@@ -314,8 +244,8 @@ class SlideshowHandler(http_server.JsonHandler):
 class HTTPAPIRemoteControl(RemoteControlProvider):
     """HTTP REST API for remote control."""
 
-    def __init__(self, config, slideshow, update_manager=None, prepare_job=None, platform='unknown'):
-        global _controller, _update_manager, _prepare_job
+    def __init__(self, config, slideshow, update_config=None, prepare_job=None, platform='unknown'):
+        global _controller, _prepare_job
         super().__init__(slideshow)
         self.port = config.get("port", 8080)
         self.platform = platform
@@ -324,56 +254,33 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
 
         # Set module-level references for handler
         _controller = self
-        _update_manager = update_manager
         _prepare_job = prepare_job
 
-    def _get_server_url(self):
-        """Get the best URL to reach this server."""
-        hostname = socket.gethostname()
-
-        if self.platform == 'wsl2':
-            return f"http://localhost:{self.port}"
-
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return f"http://{ip}:{self.port}"
-        except:
-            pass
-
-        try:
-            fqdn = socket.getfqdn()
-            if fqdn and fqdn != hostname and '.' in fqdn:
-                return f"http://{fqdn}:{self.port}"
-        except:
-            pass
-
-        return f"http://{hostname}:{self.port}"
+        # Store update_config for handler class
+        self._update_config = update_config
 
     def get_server_url(self):
         """Public method to get server URL."""
-        return self._get_server_url()
-
-    def _print_server_url_async(self):
-        """Print server URL in background thread."""
-        def resolve_and_print():
-            url = self._get_server_url()
-            logger.info(f"HTTP API server reachable at {url}")
-            if self.platform == 'wsl2':
-                logger.info("         (For LAN access from mobile, use your Windows IP instead of localhost)")
-        threading.Thread(target=resolve_and_print, daemon=True).start()
+        return get_server_url(self.port, self.platform)
 
     def start(self):
-        # Configure handler with docs config
+        # Configure handler with docs and update config
         SlideshowHandler.docs_config = DOCS_CONFIG
+        SlideshowHandler.update_config = self._update_config
+        SlideshowHandler.static_dir = os.path.join(paths.APP_DIR, 'static')
 
         self._server = HTTPServer(('0.0.0.0', self.port), SlideshowHandler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
-        logger.info(f"HTTP API server started on port {self.port}")
-        self._print_server_url_async()
+
+        # Log URL asynchronously (DNS lookup can be slow)
+        def log_url():
+            url = self.get_server_url()
+            logger.info(f"HTTP API server started on port {self.port}")
+            logger.info(f"HTTP API server reachable at {url}")
+            if self.platform == 'wsl2':
+                logger.info("         (For LAN access from mobile, use your Windows IP instead of localhost)")
+        threading.Thread(target=log_url, daemon=True).start()
 
     def stop(self):
         if self._server:

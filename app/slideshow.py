@@ -61,15 +61,17 @@ else:
 from aide_frame.log import logger
 from aide_frame.platform_detect import PLATFORM, VIDEO_CONFIG
 from aide_frame.config import load_config
-from aide_frame.update import UpdateManager, get_local_version
+from aide_frame.update import get_local_version
+from aide_frame import update_routes
 from aide_frame.args import add_common_args, apply_common_args
 
 # =============================================================================
 # 4. APP-SPECIFIC IMPORTS
 # =============================================================================
 
-from utils import DEFAULT_CONFIG
-from utils.helpers import resolve_safe_path, get_or_create_welcome_image, prepare_job
+from config import DEFAULT_CONFIG
+from aide_frame.paths import resolve_safe_path
+from utils.helpers import get_or_create_welcome_image, prepare_job
 from monitor import create_monitor_control
 from motion import create_motion_sensor
 from remote.http_api import HTTPAPIRemoteControl
@@ -477,23 +479,18 @@ def main():
         config['display_duration'] = args.duration
         logger.info(f"Display duration overridden to: {args.duration}s")
 
-    # Initialize update manager
-    update_config = config.get("update", {})
-    update_manager = UpdateManager(update_config)
+    # Initialize update config (auto-verification is handled by UpdateConfig)
+    remote_update_config = config.get("remote_update", {})
+    source = remote_update_config.get("source", {})
+    update_config = update_routes.UpdateConfig(
+        github_repo=source.get("repo", "aide-examples/aide-slideshow"),
+        branch=source.get("branch", "main"),
+        use_releases=source.get("use_releases", True),
+        service_name=remote_update_config.get("service_name"),
+    )
+    # Trigger manager creation (starts auto-verification if pending)
+    update_config.get_manager()
     logger.info(f"Version: {get_local_version()}")
-
-    # Check if we need to verify a pending update
-    if update_manager._state.get("pending_verification"):
-        logger.info("Update pending verification - will confirm after 60s stable operation")
-
-        def delayed_confirm():
-            time.sleep(60)
-            if update_manager._state.get("pending_verification"):
-                result = update_manager.confirm_update()
-                logger.info(f"Update verification: {result.get('message', 'done')}")
-
-        confirm_thread = threading.Thread(target=delayed_confirm, daemon=True)
-        confirm_thread.start()
 
     # Create slideshow
     app = Slideshow(config)
@@ -508,13 +505,13 @@ def main():
     if http_config.get("enabled", True):
         http_api = HTTPAPIRemoteControl(
             http_config, app,
-            update_manager=update_manager,
+            update_config=update_config,
             prepare_job=prepare_job,
             platform=PLATFORM
         )
         http_api.start()
         remote_controls.append(http_api)
-        server_url = http_api._get_server_url()
+        server_url = http_api.get_server_url()
 
     # IR Remote
     ir_config = rc_config.get("ir_remote", {})

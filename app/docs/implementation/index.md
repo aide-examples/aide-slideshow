@@ -18,9 +18,12 @@ app/
 │   ├── platform_detect.py # Platform detection (raspi/wsl2/linux/etc.)
 │   └── update.py         # GitHub-based remote updates
 │
+├── config/               # Application configuration
+│   ├── __init__.py
+│   └── app_config.py     # DEFAULT_CONFIG for slideshow
+│
 ├── utils/                # Application-specific utilities
 │   ├── __init__.py
-│   ├── app_config.py     # DEFAULT_CONFIG for slideshow
 │   └── helpers.py        # Welcome image, docs, path security
 │
 ├── monitor/              # Monitor power control providers
@@ -45,8 +48,11 @@ flowchart TB
         update["update.py<br/><i>UpdateManager</i>"]
     end
 
-    subgraph AppUtils["utils/ (App-Specific)"]
+    subgraph AppConfig["config/ (Configuration)"]
         app_config["app_config.py<br/><i>DEFAULT_CONFIG</i>"]
+    end
+
+    subgraph AppUtils["utils/ (Utilities)"]
         helpers["helpers.py<br/><i>Welcome image, docs</i>"]
     end
 

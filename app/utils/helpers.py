@@ -2,7 +2,6 @@
 Utility functions for the slideshow application.
 
 Contains:
-- File loading utilities
 - Welcome image generation
 - Image preparation job management
 """
@@ -12,39 +11,6 @@ import threading
 
 from aide_frame import paths
 from aide_frame.log import logger
-from aide_frame.paths import PathSecurityError, resolve_safe_path
-
-
-# =============================================================================
-# FILE LOADING
-# =============================================================================
-
-def load_static_file(filename, binary=False):
-    """Load a file from the static directory."""
-    paths.ensure_initialized()
-    if paths.STATIC_DIR is None:
-        return None
-    filepath = os.path.join(paths.STATIC_DIR, filename)
-    try:
-        mode = 'rb' if binary else 'r'
-        encoding = None if binary else 'utf-8'
-        with open(filepath, mode, encoding=encoding) as f:
-            return f.read()
-    except FileNotFoundError:
-        return None
-
-
-def load_readme():
-    """Load README.md from the app directory."""
-    paths.ensure_initialized()
-    if paths.APP_DIR is None:
-        return "# README not found"
-    readme_path = os.path.join(paths.APP_DIR, "README.md")
-    try:
-        with open(readme_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        return "# README not found\n\nThe README.md file was not found in the project directory."
 
 
 # =============================================================================
@@ -61,8 +27,6 @@ def url_to_filename(url):
 def generate_welcome_image(url, output_path, width=1920, height=1080, alexa_device_name=None):
     """Generate a welcome image with QR code pointing to the control UI.
 
-    Only imports qrcode library when actually needed (lazy loading).
-
     Args:
         url: URL to the control UI
         output_path: Path to save the image
@@ -70,20 +34,20 @@ def generate_welcome_image(url, output_path, width=1920, height=1080, alexa_devi
         height: Image height in pixels
         alexa_device_name: If set, show Alexa voice control hint
     """
+    from aide_frame import qrcode_utils
+
     try:
-        # Lazy import - only load when needed
-        import qrcode
         from PIL import Image, ImageDraw, ImageFont
     except ImportError as e:
         logger.warning(f"Cannot generate welcome image: {e}")
-        logger.info("Install with: pip install qrcode[pil]")
+        logger.info("Install with: pip install pillow")
         return False
 
-    # Create QR code
-    qr = qrcode.QRCode(version=1, box_size=10, border=2)
-    qr.add_data(url)
-    qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="white", back_color="black")
+    # Generate QR code using framework utility (white on black for dark background)
+    qr_img = qrcode_utils.generate_qr_image(url, fill_color="white", back_color="black")
+    if qr_img is None:
+        logger.warning("Cannot generate welcome image: qrcode library not available")
+        return False
 
     # Create main image (dark background)
     img = Image.new('RGB', (width, height), color=(20, 20, 30))
@@ -91,12 +55,7 @@ def generate_welcome_image(url, output_path, width=1920, height=1080, alexa_devi
 
     # Scale QR code to reasonable size (about 1/3 of height)
     qr_size = min(height // 3, 360)
-    # Use NEAREST for older Pillow versions (Resampling added in 9.1.0)
-    try:
-        resample = Image.Resampling.NEAREST
-    except AttributeError:
-        resample = Image.NEAREST
-    qr_img = qr_img.resize((qr_size, qr_size), resample)
+    qr_img = qrcode_utils.resize_qr_image(qr_img, (qr_size, qr_size))
 
     # Position QR code (center-left area)
     qr_x = width // 4 - qr_size // 2
@@ -109,7 +68,7 @@ def generate_welcome_image(url, output_path, width=1920, height=1080, alexa_devi
         text_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
         url_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
         small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
-    except:
+    except (OSError, IOError):
         title_font = ImageFont.load_default()
         text_font = title_font
         url_font = title_font
@@ -177,7 +136,7 @@ def get_or_create_welcome_image(url, alexa_device_name=None, force=False):
                 try:
                     os.remove(old_path)
                     logger.debug(f"Removed old welcome image: {old_file}")
-                except:
+                except OSError:
                     pass
 
     # Generate new image
@@ -291,10 +250,6 @@ prepare_job = ImagePrepareJob()
 
 
 __all__ = [
-    'PathSecurityError',
-    'resolve_safe_path',
-    'load_static_file',
-    'load_readme',
     'url_to_filename',
     'generate_welcome_image',
     'get_or_create_welcome_image',

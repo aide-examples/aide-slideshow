@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title data-i18n="app_title">AIDE Slideshow</title>
+    <link rel="stylesheet" href="/static/css/common.css">
+</head>
+<body>
+    <div class="container">
+        <div id="app-header"></div>
+
+        <div class="card">
+            <div class="status-row">
+                <span class="status-label" data-i18n="status">Status</span>
+                <span class="status-value" id="status-paused">--</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label" data-i18n="monitor">Monitor</span>
+                <span class="status-value" id="status-monitor">--</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label" data-i18n="images">Images</span>
+                <span class="status-value" id="status-playlist">--</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label" data-i18n="filter">Filter</span>
+                <span class="status-value" id="status-filter">--</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button onclick="api('pause')" class="secondary">
+                <span class="icon">⏸</span> <span data-i18n="pause">Pause</span>
+            </button>
+            <button onclick="api('resume')">
+                <span class="icon">▶</span> <span data-i18n="play">Play</span>
+            </button>
+            <button onclick="api('skip')" class="secondary">
+                <span class="icon">⏭</span> <span data-i18n="skip">Skip</span>
+            </button>
+            <button onclick="api('monitor/on')" class="secondary">
+                <span class="icon">📺</span> <span data-i18n="mon_on">Mon On</span>
+            </button>
+            <button onclick="api('monitor/off')" class="secondary">
+                <span class="icon">🌙</span> <span data-i18n="mon_off">Mon Off</span>
+            </button>
+            <button onclick="refreshStatus()" class="secondary">
+                <span class="icon">🔄</span> <span data-i18n="refresh">Refresh</span>
+            </button>
+        </div>
+
+        <div class="speed-control">
+            <label data-i18n="duration">Duration</label>
+            <div class="speed-row">
+                <button onclick="changeDuration(-5)" class="secondary">−5</button>
+                <div class="speed-value"><span id="duration">--</span>s</div>
+                <button onclick="changeDuration(5)" class="secondary">+5</button>
+            </div>
+        </div>
+
+        <div class="folders">
+            <h3 data-i18n="filter_folder">Filter by Folder</h3>
+            <div class="folder-list" id="folder-list">
+                <button class="folder-btn" onclick="clearFilter()" data-i18n="all">All</button>
+            </div>
+            <div class="links-row">
+                <a id="file-manager-link" href="#" target="_blank" data-i18n="file_manager">File Manager</a>
+                <a href="/prepare" data-i18n="image_prep">Image Prep</a>
+            </div>
+        </div>
+
+        <div class="card" id="version-card" style="margin-top: 20px;">
+            <div class="status-row">
+                <span class="status-label" data-i18n="version">Version</span>
+                <span class="status-value" id="version-display">--</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label" data-i18n="memory">Memory</span>
+                <span class="status-value" id="memory-display" style="font-size: 0.85em; color: #888;">--</span>
+            </div>
+            <div class="status-row" id="update-row" style="display: none;">
+                <span class="status-label" data-i18n="update">Update</span>
+                <a href="/update" class="status-value" style="color: #60a5fa; text-decoration: none;" data-i18n="available">Available</a>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <a href="/update" class="version-link" style="flex: 1;" data-i18n="system_update">System Update</a>
+                <button onclick="restartServer()" class="secondary" style="padding: 8px 12px; font-size: 0.85em;" data-i18n="restart">Restart</button>
+            </div>
+        </div>
+
+        <p class="refresh-note" data-i18n="auto_refresh">Auto-refresh every 5 seconds</p>
+    </div>
+
+    <script src="/static/frame/vendor/polyglot/polyglot.min.js"></script>
+    <script src="/static/frame/js/i18n.js"></script>
+    <script src="/static/frame/js/header-widget.js"></script>
+    <script src="/static/slide/slide.js"></script>
+</body>
+</html>
