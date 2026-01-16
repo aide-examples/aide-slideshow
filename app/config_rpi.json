@@ -17,7 +17,7 @@
             "active_low": false
         },
         "samsung_ws": {
-            "ip": "192.168.0.197",
+            "ip": "192.168.0.90",
             "port": 8002,
             "mac_address": null,
             "token_file": "/home/pi/.samsung_token",
