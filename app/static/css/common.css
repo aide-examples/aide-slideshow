@@ -16,6 +16,17 @@
     max-width: 700px;
 }
 
+/* Status widget - stays fixed at bottom in page-fill mode */
+#status-widget {
+    flex-shrink: 0;
+}
+
+#status-widget .status-footer {
+    margin-top: 4px;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
 /* =============================================================================
    Slideshow-Specific Components
    ============================================================================= */

@@ -126,7 +126,7 @@ function updateOrientationButtons() {
     HeaderWidget.init('#app-header', { appName: i18n.t('app_title'), showGoogleTranslate: true });
     StatusWidget.init('#status-widget', {
         showRestart: true,
-        showLayoutToggle: false,
+        showLayoutToggle: true,
         layoutDefault: 'flow'
     });
 
