@@ -18,7 +18,7 @@ Endpoints:
 
 import os
 import threading
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 
 from aide_frame import paths, http_routes, http_server, update_routes
 from aide_frame.http_server import get_server_url, restart_server
@@ -280,7 +280,9 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         SlideshowHandler.update_config = self._update_config
         SlideshowHandler.static_dir = os.path.join(paths.APP_DIR, 'static')
 
-        self._server = HTTPServer(('0.0.0.0', self.port), SlideshowHandler)
+        # Use ThreadingHTTPServer to handle concurrent requests
+        # (prevents blocking when monitor control operations are slow)
+        self._server = ThreadingHTTPServer(('0.0.0.0', self.port), SlideshowHandler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
 
