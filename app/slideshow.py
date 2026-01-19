@@ -512,7 +512,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # Apply common args (log level, config loading)
+    # Apply common args (log level, config loading, icon generation)
     config = apply_common_args(
         args,
         config_search_paths=[
@@ -520,7 +520,8 @@ def main():
             os.path.join(PROJECT_DIR, "config.json"),
             "/home/pi/config.json",
         ],
-        config_defaults=DEFAULT_CONFIG
+        config_defaults=DEFAULT_CONFIG,
+        app_dir=SCRIPT_DIR
     )
     logger.info("Configuration loaded")
 
