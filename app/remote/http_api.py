@@ -255,7 +255,7 @@ class SlideshowHandler(http_server.JsonHandler):
 class HTTPAPIRemoteControl(RemoteControlProvider):
     """HTTP REST API for remote control."""
 
-    def __init__(self, config, slideshow, update_config=None, prepare_job=None, platform='unknown'):
+    def __init__(self, config, slideshow, update_config=None, prepare_job=None, platform='unknown', pwa_config=None):
         global _controller, _prepare_job
         super().__init__(slideshow)
         self.port = config.get("port", 8080)
@@ -270,13 +270,29 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         # Store update_config for handler class
         self._update_config = update_config
 
+        # Store PWA config for docs_config
+        self._pwa_config = pwa_config
+
     def get_server_url(self):
         """Public method to get server URL."""
         return get_server_url(self.port, self.platform)
 
     def start(self):
         # Configure handler with docs and update config
-        SlideshowHandler.docs_config = DOCS_CONFIG
+        # Set PWA config on docs_config if provided
+        docs_config = DOCS_CONFIG
+        if self._pwa_config:
+            docs_config = http_routes.DocsConfig(
+                app_name=DOCS_CONFIG.app_name,
+                back_link=DOCS_CONFIG.back_link,
+                back_text=DOCS_CONFIG.back_text,
+                docs_dir_key=DOCS_CONFIG.docs_dir_key,
+                framework_dir_key=DOCS_CONFIG.framework_dir_key,
+                help_dir_key=DOCS_CONFIG.help_dir_key,
+                enable_mermaid=DOCS_CONFIG.enable_mermaid,
+                pwa=self._pwa_config,
+            )
+        SlideshowHandler.docs_config = docs_config
         SlideshowHandler.update_config = self._update_config
         SlideshowHandler.static_dir = os.path.join(paths.APP_DIR, 'static')
 

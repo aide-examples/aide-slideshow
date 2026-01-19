@@ -570,11 +570,20 @@ def main():
     http_config = rc_config.get("http_api", {})
     server_url = None
     if http_config.get("enabled", True):
+        # Get PWA config for manifest.json
+        pwa_config = config.get("pwa")
+        if pwa_config and pwa_config.get("enabled"):
+            from aide_frame.http_routes import PWAConfig
+            pwa_config = PWAConfig(**pwa_config)
+        else:
+            pwa_config = None
+
         http_api = HTTPAPIRemoteControl(
             http_config, app,
             update_config=update_config,
             prepare_job=prepare_job,
-            platform=PLATFORM
+            platform=PLATFORM,
+            pwa_config=pwa_config
         )
         http_api.start()
         remote_controls.append(http_api)
