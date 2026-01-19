@@ -573,7 +573,7 @@ def main():
         pwa_config = config.get("pwa")
         if pwa_config and pwa_config.get("enabled"):
             from aide_frame.http_routes import PWAConfig
-            pwa_config = PWAConfig(**pwa_config)
+            pwa_config = PWAConfig.from_dict(pwa_config)
         else:
             pwa_config = None
 

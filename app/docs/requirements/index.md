@@ -8,7 +8,7 @@ Feature list from the user's perspective. Items marked with (*) are implemented.
 - Display images in canonical order by name or timestamp
 - Show all images or only a subset (*)
 - Restrict shown images to those matching monitor orientation (portrait/landscape)
-- Recognize current monitor orientation (tilt sensor)
+- detect current monitor orientation (tilt sensor)
 - Show image as it is (*)
 - Image preparation if there is no perfect fit
   - Resize (shrink, expand) (*)
@@ -19,7 +19,19 @@ Feature list from the user's perspective. Items marked with (*) are implemented.
   - Offer art style borders/frames
   - control backlight LED strips
   - control a motor which turns the monitor by 90°
-  
+  - access to remote image folder(s), grant folder for others
+
+## Other Media
+
+- Show videos
+- play mp3 while presenting an image (HDMI, pygame?)
+- bird clock
+- link to Google Calendar
+- link to ALexa, voice control via Amazon Webservice
+- show reminders
+- link to door camera after ringing signal received
+- show photovoltaik production
+
 ## Control (How)
 
 - Via REST API (*)
@@ -41,6 +53,7 @@ Feature list from the user's perspective. Items marked with (*) are implemented.
 - Monitor on/off via CEC (*)
 - Monitor on/off via relay (AC power)
 - Monitor on/off via Shelly plug
+- save user's changes to config
 
 ## Image Administration
 
