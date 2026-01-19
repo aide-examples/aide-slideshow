@@ -89,6 +89,9 @@ class Slideshow:
         self.display_duration = config["display_duration"]
         self.fade_steps = config["fade_steps"]
 
+        # Merge platform defaults with command-line overrides
+        self.video_config = {**VIDEO_CONFIG, **config.get('video_overrides', {})}
+
         # Resolve paths safely (supports both relative and absolute, blocks '..')
         self.image_dir = resolve_safe_path(config["image_dir"])
         default_upload = "img/upload"  # Relative default
@@ -136,7 +139,7 @@ class Slideshow:
         logger.info(f"Detected resolution: {info.current_w}x{info.current_h}")
 
         # Use platform-specific display configuration
-        if VIDEO_CONFIG.get('fullscreen', True):
+        if self.video_config.get('fullscreen', True):
             # Fullscreen mode for Raspberry Pi
             pygame.mouse.set_visible(False)
             self.screen = pygame.display.set_mode(
@@ -145,7 +148,7 @@ class Slideshow:
             )
         else:
             # Windowed mode for desktop/WSL2 testing
-            width, height = VIDEO_CONFIG.get('windowed_size', (1280, 720))
+            width, height = self.video_config.get('windowed_size', (1280, 720))
             pygame.display.set_caption("Slideshow - Press Q to quit, Space to pause")
             self.screen = pygame.display.set_mode(
                 (width, height),
@@ -321,7 +324,7 @@ class Slideshow:
             logger.info(f"Orientation set to: {orientation}")
 
             # WSL2/windowed mode: flag for resize (must happen in main thread)
-            if PLATFORM == 'wsl2' or not VIDEO_CONFIG.get('fullscreen', True):
+            if PLATFORM == 'wsl2' or not self.video_config.get('fullscreen', True):
                 is_portrait_now = orientation.startswith('portrait')
                 was_portrait = old_orientation.startswith('portrait')
                 if is_portrait_now != was_portrait:
@@ -376,7 +379,7 @@ class Slideshow:
                     self.set_duration(self.display_duration - 5)
                 elif event.key == pygame.K_f:
                     # Toggle fullscreen in desktop mode
-                    if not VIDEO_CONFIG.get('fullscreen', True):
+                    if not self.video_config.get('fullscreen', True):
                         pygame.display.toggle_fullscreen()
             elif event.type == pygame.VIDEORESIZE:
                 self.width, self.height = event.w, event.h
@@ -455,7 +458,7 @@ class Slideshow:
                 # Portrait mode on fullscreen: rotate image to match physical monitor orientation
                 # KMSDRM (Raspi) can't resize window, so we rotate the image instead
                 # Scale to swapped dimensions (height x width), then rotate for monitor orientation
-                if self.orientation.startswith('portrait') and VIDEO_CONFIG.get('fullscreen', True):
+                if self.orientation.startswith('portrait') and self.video_config.get('fullscreen', True):
                     img = pygame.transform.scale(img, (self.height, self.width))
                     # portrait_left: monitor rotated CCW, rotate image CW (+90)
                     # portrait_right: monitor rotated CW, rotate image CCW (-90)
@@ -491,60 +494,48 @@ class Slideshow:
 # MAIN
 # =============================================================================
 
-def parse_args():
-    """Parse command line arguments for testing/development."""
+def main():
     import argparse
+
     parser = argparse.ArgumentParser(description='Photo Slideshow')
     add_common_args(parser, config_default='config.json')
-    parser.add_argument('--image-dir', '-i', type=str,
-                        help='Override image directory')
-    parser.add_argument('--duration', '-d', type=int,
-                        help='Override display duration (seconds)')
-    parser.add_argument('--fullscreen', '-f', action='store_true',
-                        help='Force fullscreen mode')
-    parser.add_argument('--windowed', '-w', action='store_true',
-                        help='Force windowed mode')
-    parser.add_argument('--size', '-s', type=str, default='1280x720',
-                        help='Window size for windowed mode (WIDTHxHEIGHT)')
-    return parser.parse_args()
+    parser.add_argument('--image-dir', '-i', type=str, help='Override image directory')
+    parser.add_argument('--duration', '-d', type=int, help='Override display duration (seconds)')
+    parser.add_argument('--fullscreen', '-f', action='store_true', help='Force fullscreen mode')
+    parser.add_argument('--windowed', '-w', action='store_true', help='Force windowed mode')
+    parser.add_argument('--size', '-s', type=str, help='Window size for windowed mode (WIDTHxHEIGHT)')
+    args = parser.parse_args()
 
+    # Resolve config path relative to SCRIPT_DIR
+    if not os.path.isabs(args.config):
+        args.config = os.path.join(SCRIPT_DIR, args.config)
 
-def main():
-    args = parse_args()
-
-    # Apply common args (log level, config loading, icon generation)
     config = apply_common_args(
         args,
-        config_search_paths=[
-            os.path.join(SCRIPT_DIR, "config.json"),
-            os.path.join(PROJECT_DIR, "config.json"),
-            "/home/pi/config.json",
-        ],
         config_defaults=DEFAULT_CONFIG,
         app_dir=SCRIPT_DIR
     )
     logger.info("Configuration loaded")
 
-    # Override VIDEO_CONFIG based on command line args
-    global VIDEO_CONFIG
+    # Store video config overrides in config dict (not global mutation)
+    video_overrides = {}
     if args.fullscreen:
-        VIDEO_CONFIG['fullscreen'] = True
+        video_overrides['fullscreen'] = True
     elif args.windowed:
-        VIDEO_CONFIG['fullscreen'] = False
+        video_overrides['fullscreen'] = False
     if args.size:
         try:
             w, h = args.size.split('x')
-            VIDEO_CONFIG['windowed_size'] = (int(w), int(h))
-        except:
-            pass
+            video_overrides['windowed_size'] = (int(w), int(h))
+        except ValueError:
+            logger.warning(f"Invalid size format: {args.size}, expected WIDTHxHEIGHT")
+    config['video_overrides'] = video_overrides
 
     # Apply command line overrides
     if args.image_dir:
         config['image_dir'] = args.image_dir
-        logger.info(f"Image directory overridden to: {args.image_dir}")
     if args.duration:
         config['display_duration'] = args.duration
-        logger.info(f"Display duration overridden to: {args.duration}s")
 
     # Initialize update config (auto-verification is handled by UpdateConfig)
     remote_update_config = config.get("remote_update", {})
