@@ -1,4 +1,4 @@
 [submodule "aide-frame"]
 	path = aide-frame
-	url = /home/gero/aide-examples/aide-frame
+	url = https://github.com/aide-examples/aide-frame.git
 	branch = main
