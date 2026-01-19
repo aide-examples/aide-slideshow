@@ -62,10 +62,9 @@ from aide_frame import update_routes
 from aide_frame.args import add_common_args, apply_common_args
 
 # =============================================================================
-# 4. APP-SPECIFIC IMPORTS
+# 4. APP IMPORTS
 # =============================================================================
 
-from config import DEFAULT_CONFIG
 from aide_frame.paths import resolve_safe_path
 from utils.helpers import get_or_create_welcome_image, prepare_job
 from monitor import create_monitor_control
@@ -74,9 +73,14 @@ from remote.http_api import HTTPAPIRemoteControl
 from remote.ir_remote import IRRemoteControl
 from remote.alexa import FauxmoRemoteControl
 
+# =============================================================================
+# 5. CONFIGURATION
+# =============================================================================
+
+from config import DEFAULT_CONFIG
 
 # =============================================================================
-# SLIDESHOW CLASS
+# 6. APPLICATION CLASS
 # =============================================================================
 
 class Slideshow:
@@ -491,7 +495,7 @@ class Slideshow:
 
 
 # =============================================================================
-# MAIN
+# 7. ARGUMENT PARSING
 # =============================================================================
 
 def main():
@@ -536,6 +540,10 @@ def main():
         config['image_dir'] = args.image_dir
     if args.duration:
         config['display_duration'] = args.duration
+
+    # =========================================================================
+    # 8. APPLICATION SETUP
+    # =========================================================================
 
     # Initialize update config (auto-verification is handled by UpdateConfig)
     remote_update_config = config.get("remote_update", {})
@@ -606,7 +614,10 @@ def main():
     )
     motion_sensor.start()
 
-    # Run slideshow (with welcome screen if server URL available)
+    # =========================================================================
+    # 9. RUN APPLICATION
+    # =========================================================================
+
     try:
         app.run(server_url=server_url)
     finally:
