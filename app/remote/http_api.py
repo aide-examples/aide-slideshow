@@ -18,24 +18,11 @@ Endpoints:
 
 import os
 import threading
-from http.server import ThreadingHTTPServer
 
-from aide_frame import paths, http_routes, http_server, update_routes
-from aide_frame.http_server import get_server_url, restart_server
+from aide_frame import paths, http_routes
+from aide_frame.http_server import HttpServer, JsonHandler, get_server_url, restart_server
 from aide_frame.log import logger
 from . import RemoteControlProvider
-
-
-# Docs/Help configuration for http_routes
-DOCS_CONFIG = http_routes.DocsConfig(
-    app_name="AIDE Slideshow",
-    back_link="/",
-    back_text="Back to Control",
-    docs_dir_key="DOCS_DIR",
-    framework_dir_key="AIDE_FRAME_DOCS_DIR",
-    help_dir_key="HELP_DIR",
-    enable_mermaid=True,
-)
 
 
 # Module-level references (set by HTTPAPIRemoteControl)
@@ -43,7 +30,7 @@ _controller = None
 _prepare_job = None
 
 
-class SlideshowHandler(http_server.JsonHandler):
+class SlideshowHandler(JsonHandler):
     """HTTP handler for slideshow control API."""
 
     def get(self, path, params):
@@ -260,47 +247,38 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         super().__init__(slideshow)
         self.port = config.get("port", 8080)
         self.platform = platform
-        self._server = None
-        self._thread = None
 
         # Set module-level references for handler
         _controller = self
         _prepare_job = prepare_job
 
-        # Store update_config for handler class
-        self._update_config = update_config
+        # Build DocsConfig with PWA if provided
+        docs_config = http_routes.DocsConfig(
+            app_name="AIDE Slideshow",
+            back_link="/",
+            back_text="Back to Control",
+            docs_dir_key="DOCS_DIR",
+            framework_dir_key="AIDE_FRAME_DOCS_DIR",
+            help_dir_key="HELP_DIR",
+            enable_mermaid=True,
+            pwa=pwa_config,
+        )
 
-        # Store PWA config for docs_config
-        self._pwa_config = pwa_config
+        # Use framework's HttpServer
+        self._server = HttpServer(
+            port=self.port,
+            handler_class=SlideshowHandler,
+            app_dir=paths.APP_DIR,
+            docs_config=docs_config,
+            update_config=update_config,
+        )
 
     def get_server_url(self):
         """Public method to get server URL."""
         return get_server_url(self.port, self.platform)
 
     def start(self):
-        # Configure handler with docs and update config
-        # Set PWA config on docs_config if provided
-        docs_config = DOCS_CONFIG
-        if self._pwa_config:
-            docs_config = http_routes.DocsConfig(
-                app_name=DOCS_CONFIG.app_name,
-                back_link=DOCS_CONFIG.back_link,
-                back_text=DOCS_CONFIG.back_text,
-                docs_dir_key=DOCS_CONFIG.docs_dir_key,
-                framework_dir_key=DOCS_CONFIG.framework_dir_key,
-                help_dir_key=DOCS_CONFIG.help_dir_key,
-                enable_mermaid=DOCS_CONFIG.enable_mermaid,
-                pwa=self._pwa_config,
-            )
-        SlideshowHandler.docs_config = docs_config
-        SlideshowHandler.update_config = self._update_config
-        SlideshowHandler.static_dir = os.path.join(paths.APP_DIR, 'static')
-
-        # Use ThreadingHTTPServer to handle concurrent requests
-        # (prevents blocking when monitor control operations are slow)
-        self._server = ThreadingHTTPServer(('0.0.0.0', self.port), SlideshowHandler)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        self._thread.start()
+        self._server.start()
 
         # Log URL asynchronously (DNS lookup can be slow)
         def log_url():
@@ -312,5 +290,4 @@ class HTTPAPIRemoteControl(RemoteControlProvider):
         threading.Thread(target=log_url, daemon=True).start()
 
     def stop(self):
-        if self._server:
-            self._server.shutdown()
+        self._server.stop()
