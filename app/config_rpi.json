@@ -1,4 +1,16 @@
 {
+    "port": 8080,
+    "pwa": {
+        "enabled": true,
+        "name": "AIDE Slideshow",
+        "short_name": "Slideshow",
+        "description": "Raspberry Pi Photo Slideshow Controller",
+        "theme_color": "#16a34a",
+        "background_color": "#ffffff",
+        "icon_192": "/static/icons/icon-192.svg",
+        "icon_512": "/static/icons/icon-512.svg"
+    },
+
     "image_dir": "img/show",
     "upload_dir": "img/upload",
     "display_duration": 35,

@@ -129,6 +129,7 @@ function updateOrientationButtons() {
         showLayoutToggle: true,
         layoutDefault: 'flow'
     });
+    PWA.init();
 
     // Auto-refresh every 5 seconds
     setInterval(refreshStatus, 5000);
