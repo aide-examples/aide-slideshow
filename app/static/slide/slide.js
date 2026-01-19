@@ -123,8 +123,12 @@ function updateOrientationButtons() {
     loadFolders();
 
     // Initialize widgets
-    HeaderWidget.init('#app-header', { appName: i18n.t('app_title') });
-    StatusWidget.init('#status-widget');
+    HeaderWidget.init('#app-header', { appName: i18n.t('app_title'), showGoogleTranslate: true });
+    StatusWidget.init('#status-widget', {
+        showRestart: true,
+        showLayoutToggle: false,
+        layoutDefault: 'flow'
+    });
 
     // Auto-refresh every 5 seconds
     setInterval(refreshStatus, 5000);

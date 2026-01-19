@@ -44,6 +44,11 @@
         }
     },
 
+    "layout": {
+        "default": "flow",
+        "allow_toggle": false
+    },
+
     "remote_control": {
         "http_api": {
             "enabled": true,

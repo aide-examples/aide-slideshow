@@ -193,4 +193,12 @@ document.getElementById('file-manager-link').href =
     await i18n.init();
     applyI18n();
     loadDefaults();
+
+    // Initialize widgets
+    HeaderWidget.init('#app-header', { appName: i18n.t('prep_title'), showGoogleTranslate: true });
+    StatusWidget.init('#status-widget', {
+        showRestart: false,
+        showLayoutToggle: false,
+        layoutDefault: 'flow'
+    });
 })();
