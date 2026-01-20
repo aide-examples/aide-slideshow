@@ -2,7 +2,8 @@
     "_comment": "Copy this file to config.json and customize for your setup",
     "port": 8080,
     "log_level": "INFO",
-    "docs_editable": false,
+    "docsEditable": false,
+    "helpEditable": false,
     "pwa": {
         "enabled": true,
         "name": "AIDE Slideshow",
